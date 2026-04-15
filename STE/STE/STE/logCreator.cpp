@@ -5,18 +5,16 @@
 #include <iostream>
 #include <string>
 
-using namespace std;
-
 // Creates new log file.
-void createNewLog(const string testName)
+void createNewLog(const std::string testName)
 {
-	const string fileName = formatFileName(testName);
+	const std::string fileName = formatFileName(testName);
 
-	ofstream logFile(fileName,ios::app);
+	std::ofstream logFile(fileName, std::ios::app);
 }
 
 // Returns the name of the log file to be created.
-string formatFileName(const string testName)
+std::string formatFileName(const std::string testName)
 {
 	time_t timestamp = time(NULL);
 	struct tm datetime;
@@ -26,15 +24,15 @@ string formatFileName(const string testName)
 
 	strftime(fileDateTime, 50, "%m%d%y - %I%M%S", &datetime);
 
-	const string fileName = testName + " - " + fileDateTime + ".html";
+	const std::string fileName = testName + " - " + fileDateTime + ".html";
 
 	return fileName;
 }
 
 // Appends log message to the log file.
-void appendLog(const string fileName, const string logMessage)
+void appendLog(const std::string fileName, const std::string logMessage)
 {
-	ofstream logFile(fileName,ios::app);
+	std::ofstream logFile(fileName, std::ios::app);
 
-	logFile << logMessage << endl;
+	logFile << logMessage << std::endl;
 }

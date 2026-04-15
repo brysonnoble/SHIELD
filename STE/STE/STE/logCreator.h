@@ -1,7 +1,5 @@
 #include <string>
 
-using namespace std;
-
 #ifndef LOGCREATOR_H_INCLUDED
 #define LOGCREATOR_H_INCLUDED
 
@@ -14,7 +12,7 @@ using namespace std;
 		A new html file is created with the name [CURRENT_TEST_NAME]-[DATE]-[TIME].
 
 */
-void createNewLog(const string testName);
+void createNewLog(const std::string testName);
 
 /* Returns the name of the log file to be created.
 
@@ -25,7 +23,7 @@ void createNewLog(const string testName);
 		fileName is returned successfully.
 
 */
-string formatFileName(const string testName);
+std::string formatFileName(const std::string testName);
 
 /* Appends log message to the log file.
 	Precondition:
@@ -36,6 +34,6 @@ string formatFileName(const string testName);
 	Postcondition:
 		logMessage is appended to the log file successfully.
 */
-void appendLog(const string fileName, const string logMessage);
+void appendLog(const std::string fileName, const std::string logMessage);
 
 #endif

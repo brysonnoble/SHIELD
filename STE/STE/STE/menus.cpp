@@ -1,0 +1,76 @@
+#include "menus.h"
+
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <string>
+#include <vector>
+
+namespace Menus
+{
+	std::vector<MenuItem> mainMenu;
+	std::vector<MenuItem> testList;
+}
+
+// Displays the main menu of STE.
+void dispMainMenu()
+{
+	dispSplash();
+	defineMenus();
+	menuHandler("Main Menu", Menus::mainMenu);
+}
+
+// Defines all menu items and their corresponding actions.
+void defineMenus() {
+	Menus::mainMenu = {
+		{"Run Test", []() {menuHandler("Test List", Menus::testList);}},
+		{"Run Test Batch", []() {menuHandler("Test List", Menus::testList);}},
+		{"Settings", []() { std::cout << "Opening settings...\n"; }}
+	};
+	Menus::testList = {
+		{"Test 1", []() { std::cout << "Running Test 1...\n"; }},
+		{"Test 2", []() { std::cout << "Running Test 2...\n"; }},
+		{"Test 3", []() { std::cout << "Running Test 3...\n"; }}
+	};
+}
+
+// Handles the user's menu selection and executes the corresponding action.
+void menuHandler(const std::string& header, const std::vector<MenuItem>& items) {
+	std::system("cls");
+
+	dispSplash();
+
+	int choice = -1;
+	while (choice != 0) {
+		std::cout << "\n--- " << header << " ---\n";
+		for (size_t i = 0; i < items.size(); ++i) {
+			std::cout << i + 1 << ". " << items[i].name << "\n";
+		}
+		std::cout << "0. Back/Quit\n";
+		std::cout << "Enter choice: ";
+		std::cin >> choice;
+
+		if (choice > 0 && choice <= items.size()) {
+			items[choice - 1].action();
+		}
+	}	
+}
+
+// Displays the splash art of STE.
+void dispSplash()
+{
+	std::ifstream splashFile("splashArt.txt");
+	if (splashFile.is_open())
+	{
+		std::string line;
+		while (getline(splashFile, line))
+		{
+			std::cout << line << std::endl;
+		}
+		splashFile.close();
+	}
+	else
+	{
+		std::cerr << "Unable to open splashArt.txt." << std::endl;
+	}
+}
