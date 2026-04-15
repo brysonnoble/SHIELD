@@ -40,5 +40,19 @@
 # debug information files
 *.dwo
 
+# Logs
+*.log
+
+# Build system / intermediate files
+*.tlog
+*.idb
+*.vcxproj.FileListAbsolute.txt
+
+# IDE user-specific files
+*.user
+
+# Custom generated files
+*.recipe
+
 # Visual Studio hidden files
 .vs/
