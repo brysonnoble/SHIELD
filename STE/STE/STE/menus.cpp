@@ -23,14 +23,11 @@ void dispMainMenu()
 // Defines all menu items and their corresponding actions.
 void defineMenus() {
 	Menus::mainMenu = {
-		{"Run Test", []() {menuHandler("Test List", Menus::testList);}},
-		{"Run Test Batch", []() {menuHandler("Test List", Menus::testList);}},
+		{"Run Tests", []() {menuHandler("Test List", Menus::testList);}},
 		{"Settings", []() { std::cout << "Opening settings...\n"; }}
 	};
 	Menus::testList = {
-		{"Test 1", []() { std::cout << "Running Test 1...\n"; }},
-		{"Test 2", []() { std::cout << "Running Test 2...\n"; }},
-		{"Test 3", []() { std::cout << "Running Test 3...\n"; }}
+		// build this list using tests in Test Scripts folder
 	};
 }
 
