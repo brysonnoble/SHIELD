@@ -48,11 +48,31 @@
 *.idb
 *.vcxproj.FileListAbsolute.txt
 
-# IDE user-specific files
+# Visual Studio / VB.NET specific
 *.user
+*.log
+*.tlog
+*.idb
 
-# Custom generated files
+# Build / intermediate / cache files
+*.cache
+*.assets.cache
+*.FileListAbsolute.txt
+
+# NuGet / package restore
+project.assets.json
+project.nuget.cache
+*.nuget.cache
+*.nuget.g.props
+*.nuget.g.targets
+*.nuget.dgspec.json
+
+# Test / build outputs
 *.recipe
+
+# .NET Core / SDK
+bin/
+obj/
 
 # Visual Studio hidden files
 .vs/
