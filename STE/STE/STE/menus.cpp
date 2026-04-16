@@ -24,7 +24,7 @@ void dispMainMenu()
 void defineMenus() {
 	Menus::mainMenu = {
 		{"Run Tests", []() {menuHandler("Test List", Menus::testList);}},
-		{"Settings", []() { std::cout << "Opening settings...\n"; }}
+		{"Settings", []() {}}
 	};
 	Menus::testList = {
 		// build this list using tests in Test Scripts folder
@@ -33,12 +33,11 @@ void defineMenus() {
 
 // Handles the user's menu selection and executes the corresponding action.
 void menuHandler(const std::string& header, const std::vector<MenuItem>& items) {
-	std::system("cls");
-
-	dispSplash();
-
 	int choice = -1;
-	while (choice != 0) {
+	while (true) {
+		std::system("cls");
+		dispSplash();
+
 		std::cout << "\n--- " << header << " ---\n";
 		for (size_t i = 0; i < items.size(); ++i) {
 			std::cout << i + 1 << ". " << items[i].name << "\n";
@@ -47,10 +46,14 @@ void menuHandler(const std::string& header, const std::vector<MenuItem>& items) 
 		std::cout << "Enter choice: ";
 		std::cin >> choice;
 
-		if (choice > 0 && choice <= items.size()) {
+		if (choice == 0) {
+			break;
+		}
+
+		if (choice > 0 && choice <= static_cast<int>(items.size())) {
 			items[choice - 1].action();
 		}
-	}	
+	}
 }
 
 // Displays the splash art of STE.
