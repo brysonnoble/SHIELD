@@ -7,3 +7,5 @@ int main(void)
 
 	return 0;
 }
+
+// TO DEBUG: cscript.exe / x "your_script.vbs"
