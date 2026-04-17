@@ -6,4 +6,17 @@
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="FMS\**" />
+    <Compile Remove="SYS\**" />
+    <EmbeddedResource Remove="FMS\**" />
+    <EmbeddedResource Remove="SYS\**" />
+    <None Remove="FMS\**" />
+    <None Remove="SYS\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\Test Scripts\Example_Test.vb" Link="Example_Test.vb" />
+  </ItemGroup>
+
 </Project>
