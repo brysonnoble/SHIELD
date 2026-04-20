@@ -40,19 +40,14 @@
 # debug information files
 *.dwo
 
-# Logs
-*.log
-
-# Build system / intermediate files
-*.tlog
-*.idb
-*.vcxproj.FileListAbsolute.txt
-
 # Visual Studio / VB.NET specific
 *.user
 *.log
 *.tlog
 *.idb
+*.resources
+*.metagen
+AssemblyAttributes.cpp
 
 # Build / intermediate / cache files
 *.cache
