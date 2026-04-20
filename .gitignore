@@ -47,7 +47,7 @@
 *.idb
 *.resources
 *.metagen
-AssemblyAttributes.cpp
+*.AssemblyAttributes.cpp
 
 # Build / intermediate / cache files
 *.cache
