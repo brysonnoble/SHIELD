@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\..\Test Scripts\Example_Test.vb" Link="Example_Test.vb" />
+    <Compile Include="..\..\..\..\Test Scripts\Example_Test.vb" Link="Example_Test.vb" />
   </ItemGroup>
 
 </Project>
