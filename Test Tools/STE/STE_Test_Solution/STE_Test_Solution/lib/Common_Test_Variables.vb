@@ -1,6 +1,6 @@
 ﻿Public Class Common_Test_Variables
     Enum VirtualEnvironment
-        VENV1
+        Urban
         VENV2
         VENV3
     End Enum

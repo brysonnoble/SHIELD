@@ -1,46 +1,68 @@
+# =========================
 # Prerequisites
+# =========================
 *.d
 
+# =========================
 # Compiled Object files
+# =========================
 *.slo
 *.lo
 *.o
 *.obj
 
+# =========================
 # Precompiled Headers
+# =========================
 *.gch
 *.pch
 
+# =========================
 # Linker files
+# =========================
 *.ilk
 
+# =========================
 # Debugger Files
+# =========================
 *.pdb
 
+# =========================
 # Compiled Dynamic libraries
+# =========================
 *.so
 *.dylib
 *.dll
 
+# =========================
 # Fortran module files
+# =========================
 *.mod
 *.smod
 
+# =========================
 # Compiled Static libraries
+# =========================
 *.lai
 *.la
 *.a
 *.lib
 
+# =========================
 # Executables
+# =========================
 *.exe
 *.out
 *.app
 
-# debug information files
+# =========================
+# Debug information files
+# =========================
 *.dwo
 
+# =========================
 # Visual Studio / VB.NET specific
+# =========================
 *.user
 *.log
 *.tlog
@@ -49,12 +71,16 @@
 *.metagen
 *.AssemblyAttributes.cpp
 
+# =========================
 # Build / intermediate / cache files
+# =========================
 *.cache
 *.assets.cache
 *.FileListAbsolute.txt
 
+# =========================
 # NuGet / package restore
+# =========================
 project.assets.json
 project.nuget.cache
 *.nuget.cache
@@ -62,12 +88,90 @@ project.nuget.cache
 *.nuget.g.targets
 *.nuget.dgspec.json
 
+# =========================
 # Test / build outputs
+# =========================
 *.recipe
 
+# =========================
 # .NET Core / SDK
+# =========================
 bin/
 obj/
 
+# =========================
 # Visual Studio hidden files
+# =========================
 .vs/
+
+# =====================================================
+# UNITY3D STANDARD IGNORES
+# =====================================================
+
+# Unity generated folders
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+
+# Memory captures
+[Mm]emoryCaptures/
+
+# Asset import pipeline
+Assets/AssetStoreTools*
+
+# Auto-generated VS / Rider project files
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+
+# Unity cache/server
+*.cache
+CacheServer/
+
+# Android / Gradle
+.gradle/
+*.apk
+*.aab
+
+# iOS / Xcode
+*.xcworkspace
+*.xcuserdata
+*.xcuserstate
+*.pbxuser
+*.mode1v3
+*.mode2v3
+
+# IL2CPP builds
+il2cppOutput/
+
+# Crash reports
+sysinfo.txt
+
+# Addressables
+Assets/AddressableAssetsData/*/*.bin*
+
+# StreamingAssets (generated)
+Assets/StreamingAssets/aa.meta
+Assets/StreamingAssets/aa/*
+
+# JetBrains Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Mac system files
+.DS_Store
+
+# Windows thumbnails
+Thumbs.db
