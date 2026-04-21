@@ -1,27 +1,27 @@
 ﻿Imports System.IO
 
-Module Common_Test_Functions
-    Function BeginTest()
+Public Module Common_Test_Functions
+    Public Sub BeginTest()
+        RunProcess(SHIELD_PATH, TestPlatform.Emulation)
         ' TODO: launch all programs
-    End Function
-
-    Function EndTest()
+    End Sub
+    Public Sub EndTest()
         ' TODO: close all programs
 
         ' Clear the shared .txt files used in the Unity scene to prevent test data from being used in future tests.
         File.WriteAllText("..\..\SHIELD Virtual Camera\Assets\STE Shared Data\TargetList.txt", "")
         File.WriteAllText("..\..\SHIELD Virtual Camera\Assets\STE Shared Data\VirtualEnvironment.txt", "")
-    End Function
+    End Sub
 
     ' This function Is used to edit the virtual environment "setting" for the test
     ' by editing a shared .txt file used in the Unity scene.
-    Function EditVirtualEnvironment(virtualEnvironment As Common_Test_Variables.VirtualEnvironment)
+    Public Sub EditVirtualEnvironment(virtualEnvironment As Common_Test_Variables.VirtualEnvironment)
 
-    End Function
+    End Sub
 
     ' This function Is used to set the target position for the test by editing a
     ' shared .txt file used in the Unity scene.
-    Function InstTarget(targetPos As Double)
+    Public Sub InstTarget(targetPos As Double)
 
-    End Function
+    End Sub
 End Module
