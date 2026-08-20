@@ -175,3 +175,12 @@ Assets/StreamingAssets/aa/*
 
 # Windows thumbnails
 Thumbs.db
+
+# =========================
+# Python (SHIELD detect/track pipeline)
+# =========================
+.venv/
+__pycache__/
+*.pyc
+*.pt
+Ultralytics/
