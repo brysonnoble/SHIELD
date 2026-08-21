@@ -9,6 +9,11 @@
 
     Public Enum VirtualEnvironment
         InitialScene
-        Urban
+        ColdNight
+        ColdSunset
+        DeepDusk
+        EpicBlueSunset
+        NightMoonBurst
+        OvercastLow
     End Enum
 End Module

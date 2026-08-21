@@ -74,11 +74,9 @@ Press `q` in the preview window to quit.
 
 1. Open `Test Tools\SHIELD Virtual Camera` in Unity Hub (Editor
    6000.3.11f1).
-2. Open either scene under `Assets/Scenes`. Select the **Main Camera**
-   in the Hierarchy and add the **Camera Streamer** component
-   (`Assets/Scripts/CameraStreamer.cs`) to it via *Add Component*.
-   Unity will generate a `.meta` file for the script the first time it
-   imports it — commit that alongside your other changes.
+2. Open a scene under `Assets/Scenes` (see the table below for the
+   full list). Each one already has a Main Camera with the **Camera
+   Streamer** component (`Assets/Scripts/CameraStreamer.cs`) attached.
 3. Enter Play Mode. The console should log
    `[CameraStreamer] Listening on 127.0.0.1:5555`.
 4. In a terminal:
@@ -93,15 +91,29 @@ Press `q` in the preview window to quit.
    the command.
 
 `Assets/STE Shared Data/VirtualEnvironment.txt` selects which scene
-loads on Play (`0` = initial scene, `1` = Urban Virtual Environment),
-matching the build index order in *File > Build Settings*. It's
-normally written by the STE test harness; it currently defaults to `0`
-so Play Mode works standalone.
+loads on Play, matching the build index order in *File > Build
+Settings* (also mirrored by the `VirtualEnvironment` enum in the STE
+harness, `Common_Test_Variables.vb`):
 
-**Note:** the scenes don't yet contain a moving target object, and the
-detector is stock COCO-pretrained YOLO — it won't recognize a scene
-with nothing in it. Point the camera at something, or add a simple
-target GameObject to a scene, to see detections.
+| Index | Scene |
+|---|---|
+| `0` | `SHIELD Virtual Camera.unity` (initial scene) |
+| `1` | `Cold Night/Cold Night.unity` |
+| `2` | `Cold Sunset/Cold Sunset.unity` |
+| `3` | `Deep Dusk/Deep Dusk.unity` |
+| `4` | `Epic_BlueSunset/Epic_BlueSunset.unity` |
+| `5` | `Night MoonBurst/Night Moon Burst.unity` |
+| `6` | `Overcast Low/AllSky_Overcast4_Low.unity` |
+
+`VirtualEnvironment.txt` is normally written by the STE test harness;
+it currently defaults to `0` so Play Mode works standalone.
+
+**Note:** scenes `1`–`6` are lighting/skybox environments (an HDRI
+skybox, a matching material, and a Directional Light, plus the camera
+from step 2 above). None of the scenes contain a moving target object,
+and the detector is stock COCO-pretrained YOLO — it won't recognize a
+scene with nothing in it. Point the camera at something, or add a
+simple target GameObject to a scene, to see detections.
 
 ## Command-line reference
 
