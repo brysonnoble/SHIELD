@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 
 import cv2
 
@@ -55,10 +56,42 @@ def run_emulation(args):
 
     print(f"[SHIELD] Starting emulation with source={args.source}")
     source.open()
+    consecutive_immediate_drops = 0
     try:
         while True:
+            frame_start = time.monotonic()
             frame = source.read()
             if frame is None:
+                if args.source == "unity":
+                    # If the connection dies within ~1s of being (re)opened,
+                    # over and over, something is actively rejecting us
+                    # (wrong process on the port, Unity-side exception,
+                    # firewall/AV) rather than a one-off Editor hiccup.
+                    # Don't spin-hammer the port in that case.
+                    if time.monotonic() - frame_start < 1.0:
+                        consecutive_immediate_drops += 1
+                    else:
+                        consecutive_immediate_drops = 0
+
+                    if consecutive_immediate_drops >= 5:
+                        print(
+                            "[SHIELD] Connection to Unity keeps dropping immediately "
+                            "after connecting. This isn't a transient blip - check the "
+                            "Unity Editor Console for '[CameraStreamer]' messages (is "
+                            "something else already using this port? did Play Mode "
+                            "actually start?). Giving up."
+                        )
+                        break
+
+                    print("[SHIELD] Lost connection to Unity, reconnecting...")
+                    source.release()
+                    time.sleep(1.0)
+                    try:
+                        source.open()
+                    except ConnectionError as exc:
+                        print(f"[SHIELD] Reconnect failed: {exc}")
+                        break
+                    continue
                 print("[SHIELD] Video source ended or disconnected.")
                 break
 

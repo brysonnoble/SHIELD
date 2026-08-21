@@ -14,7 +14,15 @@ public class SceneSelector : MonoBehaviour
             {
                 string sceneIndexStr = File.ReadAllLines(sharedDataPath)[0];
                 int sceneIndex = int.Parse(sceneIndexStr);
-                SceneManager.LoadScene(sceneIndex);
+
+                // Loading the already-active scene reloads it from
+                // scratch, re-running every object's Start() - including
+                // this one - which would call LoadScene() again and again
+                // forever. Only load when we're actually switching scenes.
+                if (SceneManager.GetActiveScene().buildIndex != sceneIndex)
+                {
+                    SceneManager.LoadScene(sceneIndex);
+                }
             }
             catch (System.Exception ex)
             {

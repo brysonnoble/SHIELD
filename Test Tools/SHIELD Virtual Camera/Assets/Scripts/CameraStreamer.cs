@@ -34,6 +34,10 @@ public class CameraStreamer : MonoBehaviour
 
     private void Start()
     {
+        // Keep capturing/streaming even if the Editor or a built player
+        // loses focus (e.g. while you alt-tab to run the Python side).
+        Application.runInBackground = true;
+
         running = true;
         serverThread = new Thread(ServerLoop) { IsBackground = true };
         serverThread.Start();
@@ -71,15 +75,22 @@ public class CameraStreamer : MonoBehaviour
             captureTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
         }
 
-        captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
-        captureTexture.Apply(false);
-
-        byte[] jpg = captureTexture.EncodeToJPG(jpegQuality);
-
-        lock (frameLock)
+        try
         {
-            latestFrame = jpg;
-            hasNewFrame = true;
+            captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+            captureTexture.Apply(false);
+
+            byte[] jpg = captureTexture.EncodeToJPG(jpegQuality);
+
+            lock (frameLock)
+            {
+                latestFrame = jpg;
+                hasNewFrame = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CameraStreamer] Frame capture failed: {ex.Message}");
         }
     }
 
@@ -88,7 +99,19 @@ public class CameraStreamer : MonoBehaviour
         try
         {
             listener = new TcpListener(IPAddress.Loopback, port);
-            listener.Start();
+            try
+            {
+                listener.Start();
+            }
+            catch (SocketException ex)
+            {
+                Debug.LogError(
+                    $"[CameraStreamer] Could not bind port {port}: {ex.Message}. "
+                    + "Is another Play session (or another app) already using this port? "
+                    + "Stop it, or change the 'port' field, then re-enter Play Mode."
+                );
+                return;
+            }
             Debug.Log($"[CameraStreamer] Listening on 127.0.0.1:{port}");
 
             while (running)
@@ -120,7 +143,14 @@ public class CameraStreamer : MonoBehaviour
 
     private void StreamToClient(NetworkStream stream)
     {
-        while (running && client.Connected)
+        // Deliberately not checking TcpClient.Connected here: on Unity's
+        // Mono runtime it isn't reliable as a loop condition (it can read
+        // false immediately after AcceptTcpClient() returns, which would
+        // exit this loop - and the enclosing using blocks - before ever
+        // writing a byte, silently resetting every incoming connection).
+        // A dead connection is instead detected by stream.Write() throwing
+        // below, which is the reliable signal.
+        while (running)
         {
             byte[] frame = null;
             lock (frameLock)
@@ -144,9 +174,10 @@ public class CameraStreamer : MonoBehaviour
                 stream.Write(lengthPrefix, 0, lengthPrefix.Length);
                 stream.Write(frame, 0, frame.Length);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return; // client disconnected
+                Debug.LogWarning($"[CameraStreamer] Client stream ended: {ex.Message}");
+                return;
             }
         }
     }

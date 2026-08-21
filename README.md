@@ -154,6 +154,14 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
   port doesn't match `config.py`'s `UNITY_PORT`.
 - **`Could not open webcam index 0`** — another app has the camera
   open, or try `--camera-index 1`.
+- **`ConnectionResetError [WinError 10054]` right after "Connected to
+  Unity"** — the Python side now auto-reconnects instead of crashing,
+  but the underlying cause is on the Unity side. Check the Unity
+  Console for a `[CameraStreamer]` warning/error logged around the same
+  time — common causes: a script recompile stopped Play Mode, the
+  scene's camera/GameObject was destroyed, or a previous Play session
+  is still holding port 5555 (stop it, or change `port` on the
+  `CameraStreamer` component).
 - **Slow inference** — expected on CPU with larger models; `yolo11n.pt`
   (the default) is the fastest. Don't switch `DEVICE` to `"cuda"`
   without first confirming your installed PyTorch build supports your

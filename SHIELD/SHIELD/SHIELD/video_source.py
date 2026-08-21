@@ -118,15 +118,21 @@ class UnityStreamSource(VideoSource):
     def read(self):
         if self._sock is None:
             return None
-        header = _recv_exact(self._sock, 4)
-        if header is None:
+        try:
+            header = _recv_exact(self._sock, 4)
+            if header is None:
+                return None
+            (length,) = struct.unpack(">I", header)
+            payload = _recv_exact(self._sock, length)
+            if payload is None:
+                return None
+            return cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
+        except OSError as exc:
+            # e.g. WinError 10054: Unity closed the connection mid-stream
+            # (Play Mode stopped, script recompile, etc). Treat like EOF
+            # so the caller can decide whether to reconnect.
+            print(f"[UnityStreamSource] Connection error: {exc}")
             return None
-        (length,) = struct.unpack(">I", header)
-        payload = _recv_exact(self._sock, length)
-        if payload is None:
-            return None
-        frame = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
-        return frame
 
     def release(self):
         if self._sock is not None:
