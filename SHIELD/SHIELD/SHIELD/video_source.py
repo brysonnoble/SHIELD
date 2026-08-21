@@ -85,8 +85,11 @@ class UnityStreamSource(VideoSource):
     Unity Editor (Play Mode) or a Unity player build, and decodes the
     length-prefixed JPEG frames it sends.
 
-    Wire format per frame: 4-byte big-endian length, then that many JPEG
-    bytes.
+    Pull-based protocol: send a single request byte, then read back a
+    4-byte big-endian length followed by that many JPEG bytes. Frames are
+    only sent on request, so a slow reader can't cause stale frames to
+    back up in the socket buffer - read() always returns the newest frame
+    Unity captured after the request was made.
     """
 
     def __init__(self, host, port, connect_retries=15, retry_delay=1.0):
@@ -101,6 +104,7 @@ class UnityStreamSource(VideoSource):
         for attempt in range(1, self.connect_retries + 1):
             try:
                 self._sock = socket.create_connection((self.host, self.port), timeout=5.0)
+                self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 print(f"[UnityStreamSource] Connected to Unity at {self.host}:{self.port}")
                 return
             except OSError as exc:
@@ -119,6 +123,7 @@ class UnityStreamSource(VideoSource):
         if self._sock is None:
             return None
         try:
+            self._sock.sendall(b"\x01")  # request the next frame
             header = _recv_exact(self._sock, 4)
             if header is None:
                 return None

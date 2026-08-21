@@ -10,9 +10,12 @@ using UnityEngine;
 // run against the Unity virtual camera before the Raspberry Pi + Camera
 // Module 3 hardware exists.
 //
-// Wire format per frame: 4-byte big-endian length, then that many JPEG
-// bytes. See SHIELD/SHIELD/SHIELD/video_source.py (UnityStreamSource)
-// for the matching Python client.
+// Pull-based protocol: the client sends a single request byte, then
+// this sends back a 4-byte big-endian length followed by that many JPEG
+// bytes. Frames are only ever sent on request so a slow client (e.g.
+// CPU-bound YOLO inference) can't cause stale frames to back up in the
+// socket buffer. See SHIELD/SHIELD/SHIELD/video_source.py
+// (UnityStreamSource) for the matching Python client.
 public class CameraStreamer : MonoBehaviour
 {
     [Header("Network")]
@@ -21,8 +24,12 @@ public class CameraStreamer : MonoBehaviour
     [Header("Capture")]
     [Range(1, 30)] public int targetFps = 15;
     [Range(10, 100)] public int jpegQuality = 75;
+    [Tooltip("Frames larger than this are downscaled before JPEG encoding (aspect ratio preserved).")]
+    public int maxWidth = 1920;
+    public int maxHeight = 1080;
 
     private Texture2D captureTexture;
+    private Texture2D scaledTexture;
     private TcpListener listener;
     private TcpClient client;
     private Thread serverThread;
@@ -80,7 +87,16 @@ public class CameraStreamer : MonoBehaviour
             captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
             captureTexture.Apply(false);
 
-            byte[] jpg = captureTexture.EncodeToJPG(jpegQuality);
+            Texture2D toEncode = captureTexture;
+            float scale = Mathf.Min(1f, (float)maxWidth / width, (float)maxHeight / height);
+            if (scale < 1f)
+            {
+                int scaledWidth = Mathf.Max(1, Mathf.RoundToInt(width * scale));
+                int scaledHeight = Mathf.Max(1, Mathf.RoundToInt(height * scale));
+                toEncode = Downscale(captureTexture, scaledWidth, scaledHeight);
+            }
+
+            byte[] jpg = toEncode.EncodeToJPG(jpegQuality);
 
             lock (frameLock)
             {
@@ -92,6 +108,27 @@ public class CameraStreamer : MonoBehaviour
         {
             Debug.LogError($"[CameraStreamer] Frame capture failed: {ex.Message}");
         }
+    }
+
+    private Texture2D Downscale(Texture2D source, int width, int height)
+    {
+        if (scaledTexture == null || scaledTexture.width != width || scaledTexture.height != height)
+        {
+            if (scaledTexture != null)
+                Destroy(scaledTexture);
+            scaledTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
+        }
+
+        RenderTexture rt = RenderTexture.GetTemporary(width, height);
+        RenderTexture prevActive = RenderTexture.active;
+        Graphics.Blit(source, rt);
+        RenderTexture.active = rt;
+        scaledTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+        scaledTexture.Apply(false);
+        RenderTexture.active = prevActive;
+        RenderTexture.ReleaseTemporary(rt);
+
+        return scaledTexture;
     }
 
     private void ServerLoop()
@@ -125,6 +162,7 @@ public class CameraStreamer : MonoBehaviour
                 using (client = listener.AcceptTcpClient())
                 using (NetworkStream stream = client.GetStream())
                 {
+                    client.NoDelay = true; // disable Nagle: frames are small and latency-sensitive
                     Debug.Log("[CameraStreamer] Python client connected.");
                     StreamToClient(stream);
                 }
@@ -148,31 +186,41 @@ public class CameraStreamer : MonoBehaviour
         // false immediately after AcceptTcpClient() returns, which would
         // exit this loop - and the enclosing using blocks - before ever
         // writing a byte, silently resetting every incoming connection).
-        // A dead connection is instead detected by stream.Write() throwing
-        // below, which is the reliable signal.
+        // A dead connection is instead detected by stream.Read()/Write()
+        // throwing or returning 0, which is the reliable signal.
+        var requestByte = new byte[1];
+
         while (running)
         {
-            byte[] frame = null;
-            lock (frameLock)
+            int bytesRead;
+            try
             {
-                if (hasNewFrame)
-                {
-                    frame = latestFrame;
-                    hasNewFrame = false;
-                }
+                bytesRead = stream.Read(requestByte, 0, 1);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[CameraStreamer] Client stream ended: {ex.Message}");
+                return;
             }
 
+            if (bytesRead <= 0)
+                return; // client closed the connection
+
+            byte[] frame = WaitForNextFrame();
             if (frame == null)
-            {
-                Thread.Sleep(5);
-                continue;
-            }
+                return; // shutting down
 
             try
             {
+                byte[] packet = new byte[4 + frame.Length];
                 byte[] lengthPrefix = BitConverter.GetBytes(IPAddress.HostToNetworkOrder(frame.Length));
-                stream.Write(lengthPrefix, 0, lengthPrefix.Length);
-                stream.Write(frame, 0, frame.Length);
+                Buffer.BlockCopy(lengthPrefix, 0, packet, 0, 4);
+                Buffer.BlockCopy(frame, 0, packet, 4, frame.Length);
+                // Single write for header+payload: two separate small
+                // writes would each eat a TCP segment, and combined with
+                // Nagle's algorithm/delayed ACK that can add tens to
+                // hundreds of ms per frame even with NoDelay set.
+                stream.Write(packet, 0, packet.Length);
             }
             catch (Exception ex)
             {
@@ -180,6 +228,27 @@ public class CameraStreamer : MonoBehaviour
                 return;
             }
         }
+    }
+
+    // Blocks until a frame captured after the last one sent is available.
+    // Only ever returns a genuinely new frame (never resends a stale one),
+    // so a client that's fallen behind gets caught up to the latest frame
+    // instead of working through a backlog.
+    private byte[] WaitForNextFrame()
+    {
+        while (running)
+        {
+            lock (frameLock)
+            {
+                if (hasNewFrame)
+                {
+                    hasNewFrame = false;
+                    return latestFrame;
+                }
+            }
+            Thread.Sleep(2);
+        }
+        return null;
     }
 
     private void Shutdown()
