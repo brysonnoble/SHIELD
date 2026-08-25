@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "STE (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "STE (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
