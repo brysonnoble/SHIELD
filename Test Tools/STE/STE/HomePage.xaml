@@ -8,11 +8,21 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="10">
-        <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Debug</Button>
-        <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Run</Button>
-        <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning}">Stop</Button>
-        <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning, Converter={StaticResource Not}}">Launch Programs</Button>
-        <Button Width="100" Height="40" Click="OpenSettingsPage">Settings</Button>
+    <StackPanel Orientation="Vertical" Spacing="10">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="10">
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Debug</Button>
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Run</Button>
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning}">Stop</Button>
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning, Converter={StaticResource Not}}">Launch Programs</Button>
+            <Button Width="100" Height="40" Click="OpenSettingsPage">Settings</Button>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding TestList}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Text}"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
     </StackPanel>
 </Page>
