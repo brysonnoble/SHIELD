@@ -123,10 +123,9 @@ UserSettings/
 # Asset import pipeline
 Assets/AssetStoreTools*
 
-# Auto-generated VS / Rider project files
-*.csproj
+# Auto-generated Unity C# project files (hand-authored .sln/.csproj
+# elsewhere in the repo, e.g. SHIELD/SHIELD.sln, are tracked)
 *.unityproj
-*.sln
 *.suo
 *.tmp
 *.userprefs
