@@ -64,7 +64,7 @@ below, safe to re-run.
 Then, to run against your webcam immediately (no Unity needed):
 
 ```
-cd "SHIELD\SHIELD\SHIELD"
+cd "SHIELD\SHIELD"
 .venv\Scripts\python __main__.py 0 --source webcam
 ```
 
@@ -82,7 +82,7 @@ Press `q` in the preview window to quit.
 4. In a terminal:
 
    ```
-   cd "SHIELD\SHIELD\SHIELD"
+   cd "SHIELD\SHIELD"
    .venv\Scripts\python __main__.py 0 --source unity
    ```
 
@@ -133,7 +133,7 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 
 ## Configuration
 
-`SHIELD/SHIELD/SHIELD/config.py` holds the shared knobs:
+`SHIELD/SHIELD/config.py` holds the shared knobs:
 
 | Setting | Purpose |
 |---|---|

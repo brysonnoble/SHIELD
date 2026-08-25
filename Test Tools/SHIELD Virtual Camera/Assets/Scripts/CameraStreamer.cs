@@ -14,7 +14,7 @@ using UnityEngine;
 // this sends back a 4-byte big-endian length followed by that many JPEG
 // bytes. Frames are only ever sent on request so a slow client (e.g.
 // CPU-bound YOLO inference) can't cause stale frames to back up in the
-// socket buffer. See SHIELD/SHIELD/SHIELD/video_source.py
+// socket buffer. See SHIELD/SHIELD/video_source.py
 // (UnityStreamSource) for the matching Python client.
 public class CameraStreamer : MonoBehaviour
 {

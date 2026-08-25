@@ -7,7 +7,7 @@ echo ================================================
 echo.
 
 set "REPO_ROOT=%~dp0"
-set "PY_DIR=%REPO_ROOT%SHIELD\SHIELD\SHIELD"
+set "PY_DIR=%REPO_ROOT%SHIELD\SHIELD"
 set "VENV_DIR=%PY_DIR%\.venv"
 
 if not exist "%PY_DIR%\requirements.txt" (
