@@ -3,18 +3,21 @@
 # (Raspberry Pi 5 + AI HAT+) runs.
 
 # --- Model ---
-# Custom YOLO11n fine-tuned on a drone-only dataset (see
-# training/README section in the repo root README.md), replacing the
-# stock COCO-pretrained weights.
-MODEL_PATH = "training/weights/drone_yolo11n_best.pt"
+# Custom YOLO11n fine-tuned on a drone+balloon dataset (see "Custom
+# drone/balloon model" section in the repo root README.md), replacing
+# the stock COCO-pretrained weights.
+MODEL_PATH = "training/weights/drone_balloon_yolo11n_best.pt"
 DEVICE = "cpu"
 
 # SYS.07: targeting system shall be >=90% confident before engaging.
 CONFIDENCE_THRESHOLD = 0.90
 
-# The custom model only has one class ("drone"), so no filtering is
-# needed. Set to e.g. ["drone"] if more classes are added later and
-# detection should stay restricted to a subset.
+# The custom model has two classes: "drone" and "balloon". CLASS_FILTER
+# is not obsolete - it still restricts which of the model's own class
+# names are kept post-detection. None = keep both. Set to e.g.
+# ["drone"] to ignore balloon detections (e.g. if balloons are only
+# useful as a low-stakes tracking-practice target, not an engagement
+# target) without retraining or touching the model itself.
 CLASS_FILTER = None
 
 # ByteTrack, bundled with ultralytics.

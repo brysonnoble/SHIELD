@@ -1,5 +1,6 @@
-train: ../datasets/drone_yolo/images/train
-val: ../datasets/drone_yolo/images/val
+train: ../datasets/combined_yolo/images/train
+val: ../datasets/combined_yolo/images/val
 
 names:
   0: drone
+  1: balloon

@@ -182,9 +182,9 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.pt
-!SHIELD/SHIELD/training/weights/drone_yolo11n_best.pt
+!SHIELD/SHIELD/training/weights/drone_balloon_yolo11n_best.pt
 Ultralytics/
 datasets/
 runs/
 kaggle.json
-training_log.txt
+training_log*.txt
