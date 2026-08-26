@@ -33,6 +33,10 @@
 *.so
 *.dylib
 *.dll
+# Except compiled asset-package DLLs some downloaded Unity scripts require
+# at runtime (e.g. ProfessionalAssets DronePack's Scripts/cmpl and
+# Editor/cmpl folders).
+!**/cmpl/**/*.dll
 
 # =========================
 # Fortran module files
