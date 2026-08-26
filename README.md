@@ -145,6 +145,37 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | `UNITY_HOST` / `UNITY_PORT` | Must match `CameraStreamer.cs`'s `port` field. |
 | `WEBCAM_INDEX` | Default webcam device. |
 
+## Custom drone model
+
+`SHIELD/SHIELD/training/` fine-tunes YOLO11n on a drone-only dataset in
+place of the stock COCO weights:
+
+- `prepare_dataset.py` — splits the downloaded dataset into
+  train/val and (re)generates `data.yaml`. Rerun this on each machine
+  you train from - it expects the raw Kaggle download to already be
+  unzipped under `datasets/`, which is gitignored (large binary files
+  don't belong in a public repo). `data.yaml` itself has no
+  machine-specific paths (Ultralytics resolves its `train:`/`val:`
+  entries relative to the yaml file's own location when no `path:`
+  key is set) so it's a small, portable, committed file.
+- `train.py` — fine-tunes `yolo11n.pt` on the result. Trains on GPU
+  automatically if CUDA is available (see `Compute` note below),
+  falls back to CPU otherwise. Raw run artifacts (checkpoints, plots,
+  `last.pt`) go to `training/runs/`, gitignored along with all other
+  `*.pt` files. The one exception: the final `best.pt` gets copied to
+  `training/weights/drone_yolo11n_best.pt`, which IS committed - so a
+  second machine gets the trained model via `git pull` rather than
+  retraining or manually copying a file over.
+
+**Dataset:** [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav),
+Kaggle user `dasmehdixtr`. 1,359 single-class (`drone`) images,
+YOLO-format annotations. License as listed on Kaggle: copyright of
+original authors.
+
+**Compute:** training device is independent of inference device — a
+model trained on GPU runs identically on the Pi 5's CPU-only AI HAT+
+fallback at inference time, since only training speed is affected.
+
 ## Known limitations
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Pi 5 + AI

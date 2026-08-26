@@ -1,0 +1,5 @@
+train: ../datasets/drone_yolo/images/train
+val: ../datasets/drone_yolo/images/val
+
+names:
+  0: drone

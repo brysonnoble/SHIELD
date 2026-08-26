@@ -3,17 +3,18 @@
 # (Raspberry Pi 5 + AI HAT+) runs.
 
 # --- Model ---
-# ultralytics auto-downloads this on first run (needs internet once).
-# "yolo11n.pt" is the smallest/fastest model, good for CPU-only emulation.
-MODEL_PATH = "yolo11n.pt"
+# Custom YOLO11n fine-tuned on a drone-only dataset (see
+# training/README section in the repo root README.md), replacing the
+# stock COCO-pretrained weights.
+MODEL_PATH = "training/weights/drone_yolo11n_best.pt"
 DEVICE = "cpu"
 
 # SYS.07: targeting system shall be >=90% confident before engaging.
 CONFIDENCE_THRESHOLD = 0.90
 
-# Restrict to specific COCO class names, e.g. ["sports ball", "kite", "bird"].
-# Empty/None = detect all 80 COCO classes (useful until a custom
-# drone/balloon model is trained via CVAT/Roboflow per the stack plan).
+# The custom model only has one class ("drone"), so no filtering is
+# needed. Set to e.g. ["drone"] if more classes are added later and
+# detection should stay restricted to a subset.
 CLASS_FILTER = None
 
 # ByteTrack, bundled with ultralytics.
