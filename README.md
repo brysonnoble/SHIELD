@@ -74,8 +74,11 @@ Press `q` in the preview window to quit.
 
 1. Open `Test Tools\SHIELD Virtual Camera` in Unity Hub (Editor
    6000.3.11f1).
-2. Open a scene under `Assets/Scenes` (see the table below for the
-   full list). Each one already has a Main Camera with the **Camera
+2. Open `Assets/Scenes/SHIELD Virtual Camera.unity` — the only scene
+   in the project. (Earlier versions of this project had a separate
+   scene per lighting environment, selected by build index; those
+   scenes have been removed in favor of the day/night skybox swap
+   described below.) It already has a Main Camera with the **Camera
    Streamer** component (`Assets/Scripts/CameraStreamer.cs`) attached.
 3. Enter Play Mode. The console should log
    `[CameraStreamer] Listening on 127.0.0.1:5555`.
@@ -90,30 +93,22 @@ Press `q` in the preview window to quit.
    Unity isn't listening yet — start Play Mode first, or just re-run
    the command.
 
-`Assets/STE Shared Data/VirtualEnvironment.txt` selects which scene
-loads on Play, matching the build index order in *File > Build
-Settings* (also mirrored by the `VirtualEnvironment` enum in the STE
-harness, `Common_Test_Variables.vb`):
+`Assets/STE Shared Data/VirtualEnvironment.txt` selects the skybox,
+applied live (polled roughly once a second, no scene reload needed)
+by the `SceneSelector` component in the scene
+(`Assets/Scripts/SceneSelector.cs`):
 
-| Index | Scene |
+| Value | Skybox |
 |---|---|
-| `0` | `SHIELD Virtual Camera.unity` (initial scene) |
-| `1` | `Cold Night/Cold Night.unity` |
-| `2` | `Cold Sunset/Cold Sunset.unity` |
-| `3` | `Deep Dusk/Deep Dusk.unity` |
-| `4` | `Epic_BlueSunset/Epic_BlueSunset.unity` |
-| `5` | `Night MoonBurst/Night Moon Burst.unity` |
-| `6` | `Overcast Low/AllSky_Overcast4_Low.unity` |
+| `0` | Day (`Assets/Misc/Materials/HDRI SkyLightBox [Day].mat`) |
+| `1` | Night (`Assets/Misc/Materials/HDRI SkyLightBox [Dusk].mat`) |
 
 `VirtualEnvironment.txt` is normally written by the STE test harness;
-it currently defaults to `0` so Play Mode works standalone.
-
-**Note:** scenes `1`–`6` are lighting/skybox environments (an HDRI
-skybox, a matching material, and a Directional Light, plus the camera
-from step 2 above). None of the scenes contain a moving target object,
-and the detector is stock COCO-pretrained YOLO — it won't recognize a
-scene with nothing in it. Point the camera at something, or add a
-simple target GameObject to a scene, to see detections.
+it currently defaults to `0` so Play Mode works standalone. Any value
+other than `0` or `1` is logged as an error in the Unity console and
+ignored — note the STE harness's own `VirtualEnvironment` enum
+(`Common_Test_Variables.vb`) predates this change and may still emit
+its old `0`-`6` range until that side is updated to match.
 
 ## Command-line reference
 
@@ -137,40 +132,51 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 
 | Setting | Purpose |
 |---|---|
-| `MODEL_PATH` | YOLO weights file. Swap to a custom-trained model once one exists (see below). |
+| `MODEL_PATH` | YOLO weights file. |
 | `CONFIDENCE_THRESHOLD` | Minimum detection confidence (0.90, traceable to SRR requirement SYS.07). |
-| `CLASS_FILTER` | Restrict detection to specific COCO class names, e.g. `["sports ball", "kite", "bird"]`. `None` = all 80 classes. |
+| `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
 | `TRACK_MAX_AGE` | Frames a track can go undetected before its Kalman filter is dropped. |
 | `UNITY_HOST` / `UNITY_PORT` | Must match `CameraStreamer.cs`'s `port` field. |
 | `WEBCAM_INDEX` | Default webcam device. |
 
-## Custom drone model
+## Custom drone/balloon model
 
-`SHIELD/SHIELD/training/` fine-tunes YOLO11n on a drone-only dataset in
-place of the stock COCO weights:
+`SHIELD/SHIELD/training/` fine-tunes YOLO11n on a combined drone +
+balloon dataset in place of the stock COCO weights. Two raw Kaggle
+downloads feed one combined training set:
 
-- `prepare_dataset.py` — splits the downloaded dataset into
-  train/val and (re)generates `data.yaml`. Rerun this on each machine
-  you train from - it expects the raw Kaggle download to already be
-  unzipped under `datasets/`, which is gitignored (large binary files
-  don't belong in a public repo). `data.yaml` itself has no
-  machine-specific paths (Ultralytics resolves its `train:`/`val:`
-  entries relative to the yaml file's own location when no `path:`
-  key is set) so it's a small, portable, committed file.
-- `train.py` — fine-tunes `yolo11n.pt` on the result. Trains on GPU
-  automatically if CUDA is available (see `Compute` note below),
-  falls back to CPU otherwise. Raw run artifacts (checkpoints, plots,
-  `last.pt`) go to `training/runs/`, gitignored along with all other
-  `*.pt` files. The one exception: the final `best.pt` gets copied to
-  `training/weights/drone_yolo11n_best.pt`, which IS committed - so a
-  second machine gets the trained model via `git pull` rather than
-  retraining or manually copying a file over.
+- `prepare_combined_dataset.py` — reads both raw downloads (expected
+  already unzipped under `datasets/`, which is gitignored — large
+  binary files don't belong in a public repo), remaps the balloon
+  set's labels from class 0 to class 1 so the two don't collide,
+  prefixes filenames per source, and writes the merged result to
+  `datasets/combined_yolo/{images,labels}/{train,val}/` plus
+  `training/data.yaml`. Rerun this on each machine you train from.
+  `data.yaml` itself has no machine-specific paths (Ultralytics
+  resolves its `train:`/`val:` entries relative to the yaml file's own
+  location when no `path:` key is set) so it's a small, portable,
+  committed file.
+- `prepare_dataset.py` — the original drone-only variant (splits just
+  the drone dataset into `datasets/drone_yolo/`). Kept around for a
+  single-class drone-only run; not used by `train.py` today.
+- `train.py` — fine-tunes `yolo11n.pt` on `training/data.yaml`. Trains
+  on GPU automatically if CUDA is available (see `Compute` note
+  below), falls back to CPU otherwise. Raw run artifacts (checkpoints,
+  plots, `last.pt`) go to `training/runs/`, gitignored along with all
+  other `*.pt` files. The one exception: the final `best.pt` gets
+  copied to `training/weights/drone_balloon_yolo11n_best.pt`, which IS
+  committed - so a second machine gets the trained model via
+  `git pull` rather than retraining or manually copying a file over.
 
-**Dataset:** [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav),
-Kaggle user `dasmehdixtr`. 1,359 single-class (`drone`) images,
-YOLO-format annotations. License as listed on Kaggle: copyright of
-original authors.
+**Datasets:**
+- [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav),
+  Mehdi Özel. 1,359 single-class (`drone`) images, YOLO-format
+  annotations. License as listed on Kaggle: copyright of original
+  authors.
+- [Balloon Object Detection](https://www.kaggle.com/datasets/serhiibiruk/balloon-object-detection),
+  Serhii Biruk. 2,365 single-class (`balloon`) images, YOLO-format
+  annotations (Roboflow export). License: MIT.
 
 **Compute:** training device is independent of inference device — a
 model trained on GPU runs identically on the Pi 5's CPU-only AI HAT+
@@ -180,11 +186,7 @@ fallback at inference time, since only training speed is affected.
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Pi 5 + AI
   HAT+) and `Prototype` modes don't exist yet.
-- Detection uses a stock COCO-pretrained model. The stack plan calls for
-  training a custom drone/balloon model via CVAT/Roboflow; once that
-  exists, point `MODEL_PATH` at it and this pipeline needs no other
-  changes.
-- The Unity scenes have no target object or motion scripting yet.
+- The Unity scene has no target object or motion scripting yet.
 - `CameraStreamer.cs` reads pixels from the screen backbuffer during
   `WaitForEndOfFrame`, so the Game view needs to actually be rendering
   (Play Mode active) — it won't work in a fully headless batch build

@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 3f8d603e6cde8f044b8c0ba41711def1, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -148,6 +148,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 377d75da51309d24088de540271005ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  daySkybox: {fileID: 2100000, guid: 3f8d603e6cde8f044b8c0ba41711def1, type: 2}
+  nightSkybox: {fileID: 2100000, guid: bf9980b2dc11f9d4fb0ef93c5c66e3f1, type: 2}
+  pollInterval: 1
 --- !u!4 &959706991
 Transform:
   m_ObjectHideFlags: 0
@@ -271,6 +274,8 @@ MonoBehaviour:
   port: 5555
   targetFps: 15
   jpegQuality: 75
+  maxWidth: 1920
+  maxHeight: 1080
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
