@@ -1,15 +1,62 @@
-# SHIELD — Local Emulation Setup
+# SHIELD
 
-S.H.I.E.L.D. (System for High Integrity Elimination of Low-Altitude Drones)
-is a Florida Tech capstone C-UAS project: an autonomous UAS that detects,
-tracks, and intercepts small aerial targets. The target hardware is a
-**Raspberry Pi 5 + AI HAT+ (Hailo) + Camera Module 3**, but this repo lets
-you build and test the detect/track pipeline on a Windows PC first, using
-Unity as a stand-in camera feed.
+**S.H.I.E.L.D.** — System for High Integrity Elimination of Low-Altitude
+Drones — is a Florida Institute of Technology senior design (capstone)
+project building an autonomous counter-UAS (C-UAS) system. SHIELD watches
+a designated area, detects and tracks small low-altitude aerial targets
+(drones, and balloons as a non-drone control case), and intercepts a
+locked target under either full autonomy or human-approved engagement.
 
-This document covers getting that local emulation running after cloning
-the repo. It does not cover the STE test harness (`Test Tools/STE`) or
-the mechanical/avionics side of the project.
+This repo is the software component, written and maintained by Bryson
+Noble (Avionics Lead, Software Engineering) as part of the larger Team
+S.H.I.E.L.D. capstone — a joint Aerospace Engineering (AEE) and Software
+Engineering (SWE) team of 11 students, advised by Firat Irmak, PhD
+(Aerospace Engineering Department, Florida Tech). See
+[**Team & project links**](#team--project-links) below for the full
+team roster and project site.
+
+## Overview
+
+The project spans two disciplines: AEE builds the airframe, propulsion,
+and interception mechanism; SWE (this repo) builds the perception and
+autonomy stack — detection, tracking, and the decision logic that hands
+off between autonomous and manually-overridden engagement. The target
+hardware is a **Raspberry Pi 5 + AI HAT+ (Hailo accelerator) + Camera
+Module 3** mounted on the drone, running the same Python pipeline that
+this repo lets you build and test on a Windows PC first, using Unity as
+a stand-in camera feed instead of the physical camera.
+
+## Vision
+
+Keep a designated area under constant watch, and count on SHIELD to
+respond the moment an unauthorized drone comes within range. Once a
+target is spotted, SHIELD locks on, follows its every move, and
+intercepts it within 20 meters — no manual aiming or tracking required.
+Operators decide exactly how much control they want: engage manual
+override to personally direct the response, or let SHIELD's onboard AI
+handle detection and engagement entirely on its own. Once locked on,
+SHIELD stays locked on, tracking through brief obstructions or awkward
+angles instead of losing the target and having to reacquire it from
+scratch.
+
+The novel piece is that **semi-autonomous** middle ground: SHIELD
+detects a target and prompts an operator to engage, but once approved,
+tracking and interception run on onboard edge computing rather than a
+continuous ground-operator link — making the system harder to jam or
+hack once it's pursuing a target.
+
+## Project status
+
+This is a two-semester capstone. First-semester milestones (Requirement
+Document, Design Document, Test Plan, and three progress milestones
+through detection/tracking, the custom drone/balloon model, and
+emulation-level interception) run September–November 2026; a second
+semester of hardware integration and final demo follows in spring 2027.
+Only the `Emulation` platform mode (PC-based, Unity or webcam camera
+feed) is implemented today — `Hardware` (Raspberry Pi 5 + AI HAT+) and
+`Prototype` modes are reserved for later milestones. See
+[Known limitations](#known-limitations) below and the itemized milestone
+tasks in the [project plan](#team--project-links).
 
 ## Architecture
 
@@ -35,6 +82,12 @@ On the real drone this same Python pipeline runs on the Pi 5, with the
 AI HAT+ accelerating YOLO inference and the Camera Module 3 as the
 source. Locally, `--source unity` or `--source webcam` stand in for that
 camera.
+
+## Local emulation setup
+
+The rest of this document covers getting the PC-based emulation running
+after cloning the repo. It does not cover the STE test harness
+(`Test Tools/STE`) or the mechanical/avionics side of the project.
 
 ## Prerequisites
 
@@ -219,3 +272,18 @@ fallback at inference time, since only training speed is affected.
   without first confirming your installed PyTorch build supports your
   GPU driver (`nvidia-smi`) — an old driver can silently fall back to
   CPU or error out.
+
+## Team & project links
+
+- **Project site:** [brysonnoble.github.io/SHIELD](https://brysonnoble.github.io/SHIELD/)
+- **First semester plan:** [SHIELD First Semester Plan.pdf](https://brysonnoble.github.io/SHIELD/Files/FA26/SHIELD%20First%20Semester%20Plan.pdf)
+- **First semester plan presentation:** [SHIELD First Semester Plan Presentation.pptx](https://brysonnoble.github.io/SHIELD/Files/FA26/SHIELD%20First%20Semester%20Plan%20Presentation.pptx)
+
+**Faculty advisor / client:** Firat Irmak, PhD — Aerospace Engineering
+Department, Florida Institute of Technology
+
+**Software maintainer:** Bryson Noble — Avionics Lead, Software Engineering
+
+Team S.H.I.E.L.D. is an 11-person AEE/SWE capstone team; the full
+roster, contact emails, and milestone deliverables are on the
+[project site](https://brysonnoble.github.io/SHIELD/).
