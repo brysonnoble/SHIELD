@@ -11,6 +11,12 @@ Sources (already unzipped under datasets/, which is gitignored):
   - datasets/balloon_dataset_yolo/{train,valid}/{images,labels}
     already split, class 0 "balloon"
     (from `kaggle datasets download -d serhiibiruk/balloon-object-detection`)
+  - datasets/unity_drone_dataset/dataset_txt/    flat dir, class 0 "drone"
+    synthetic renders from the Unity SHIELD Virtual Camera (see
+    Test Tools/SHIELD Virtual Camera/Assets/Editor/SHIELD Virtual Camera
+    Data Collector); ground-truth boxes computed from known scene
+    transforms, not hand-labeled. Fills in the sim-domain gap (day/night
+    skybox, camera roll, multi-drone frames) real-photo sources lack.
 
 Output: datasets/combined_yolo/{images,labels}/{train,val}/, with balloon
 label class ids remapped 0 -> 1 (drone stays 0) and filenames prefixed per
@@ -25,6 +31,7 @@ REPO_ROOT = Path(__file__).parent.parent
 DRONE_SRCS = [
     (REPO_ROOT / "datasets" / "drone_dataset_yolo" / "dataset_txt", "drone"),
     (REPO_ROOT / "datasets" / "drone_dataset_yolo_2" / "dataset_txt", "drone2"),
+    (REPO_ROOT / "datasets" / "unity_drone_dataset" / "dataset_txt", "unity"),
 ]
 BALLOON_SRC = REPO_ROOT / "datasets" / "balloon_dataset_yolo"
 DST = REPO_ROOT / "datasets" / "combined_yolo"
