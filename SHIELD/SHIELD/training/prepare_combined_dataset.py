@@ -1,16 +1,20 @@
-"""Build the combined drone+balloon training set from the two raw Kaggle
+"""Build the combined drone+balloon training set from the raw Kaggle
 downloads, and (re)generate training/data.yaml for a 2-class model.
 
 Sources (already unzipped under datasets/, which is gitignored):
-  - datasets/drone_dataset_yolo/dataset_txt/   flat dir, class 0 "drone"
+  - datasets/drone_dataset_yolo/dataset_txt/    flat dir, class 0 "drone"
     (from `kaggle datasets download -d dasmehdixtr/drone-dataset-uav`)
+  - datasets/drone_dataset_yolo_2/dataset_txt/  flat dir, class 0 "drone"
+    (from `kaggle datasets download -d sshikamaru/drone-yolo-detection`)
+    adds more scale/distance variety (many far-away/small-in-frame drones);
+    some images are unlabeled backgrounds (empty .txt), kept as negatives.
   - datasets/balloon_dataset_yolo/{train,valid}/{images,labels}
     already split, class 0 "balloon"
     (from `kaggle datasets download -d serhiibiruk/balloon-object-detection`)
 
 Output: datasets/combined_yolo/{images,labels}/{train,val}/, with balloon
 label class ids remapped 0 -> 1 (drone stays 0) and filenames prefixed per
-source so the two sets can't collide.
+source so the sets can't collide.
 """
 
 import random
@@ -18,11 +22,19 @@ import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
-DRONE_SRC = REPO_ROOT / "datasets" / "drone_dataset_yolo" / "dataset_txt"
+DRONE_SRCS = [
+    (REPO_ROOT / "datasets" / "drone_dataset_yolo" / "dataset_txt", "drone"),
+    (REPO_ROOT / "datasets" / "drone_dataset_yolo_2" / "dataset_txt", "drone2"),
+]
 BALLOON_SRC = REPO_ROOT / "datasets" / "balloon_dataset_yolo"
 DST = REPO_ROOT / "datasets" / "combined_yolo"
 DRONE_VAL_FRACTION = 0.15
+IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 SEED = 0
+
+
+def list_images(directory):
+    return sorted(p for p in directory.iterdir() if p.suffix.lower() in IMAGE_EXTS)
 
 
 def copy_pair(img_src, lbl_src, split_name, stem, remap_class=None):
@@ -48,21 +60,27 @@ def copy_pair(img_src, lbl_src, split_name, stem, remap_class=None):
 
 
 def add_drone():
-    pairs = sorted(p.stem for p in DRONE_SRC.glob("*.jpg"))
+    pairs = []  # (img_path, lbl_path, stem)
+    skipped = 0
+    for src_dir, prefix in DRONE_SRCS:
+        for img_path in list_images(src_dir):
+            lbl_path = src_dir / f"{img_path.stem}.txt"
+            if not lbl_path.exists():
+                skipped += 1
+                continue
+            pairs.append((img_path, lbl_path, f"{prefix}_{img_path.stem}"))
+
     random.Random(SEED).shuffle(pairs)
     n_val = int(len(pairs) * DRONE_VAL_FRACTION)
     split = {"val": pairs[:n_val], "train": pairs[n_val:]}
 
     counts = {}
-    for split_name, stems in split.items():
-        for stem in stems:
-            copy_pair(
-                DRONE_SRC / f"{stem}.jpg",
-                DRONE_SRC / f"{stem}.txt",
-                split_name,
-                f"drone_{stem}",
-            )
-        counts[split_name] = len(stems)
+    for split_name, items in split.items():
+        for img_path, lbl_path, stem in items:
+            copy_pair(img_path, lbl_path, split_name, stem)
+        counts[split_name] = len(items)
+    if skipped:
+        print(f"drone: skipped {skipped} image(s) with no label file")
     return counts
 
 

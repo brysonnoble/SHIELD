@@ -12,9 +12,7 @@ DEVICE = "cpu"
 # SYS.07: targeting system shall be >=90% confident before engaging.
 CONFIDENCE_THRESHOLD = 0.90
 
-# The custom model has two classes: "drone" and "balloon". CLASS_FILTER
-# is not obsolete - it still restricts which of the model's own class
-# names are kept post-detection. None = keep both. Set to e.g.
+# The custom model has two classes: "drone" and "balloon". Set to e.g.
 # ["drone"] to ignore balloon detections (e.g. if balloons are only
 # useful as a low-stakes tracking-practice target, not an engagement
 # target) without retraining or touching the model itself.

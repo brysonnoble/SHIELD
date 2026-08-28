@@ -143,8 +143,10 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 ## Custom drone/balloon model
 
 `SHIELD/SHIELD/training/` fine-tunes YOLO11n on a combined drone +
-balloon dataset in place of the stock COCO weights. Two raw Kaggle
-downloads feed one combined training set:
+balloon dataset in place of the stock COCO weights. Three raw Kaggle
+downloads feed one combined training set — two drone sources (one
+mostly close-range, one with more distance/scale variety, to help
+detection of small/far-away targets) plus one balloon source:
 
 - `prepare_combined_dataset.py` — reads both raw downloads (expected
   already unzipped under `datasets/`, which is gitignored — large
@@ -174,6 +176,11 @@ downloads feed one combined training set:
   Mehdi Özel. 1,359 single-class (`drone`) images, YOLO-format
   annotations. License as listed on Kaggle: copyright of original
   authors.
+- [Drone YOLO Detection](https://www.kaggle.com/datasets/sshikamaru/drone-yolo-detection),
+  sshikamaru. ~4,010 labeled single-class (`drone`) images plus
+  unlabeled background frames (kept as negatives), YOLO-format
+  annotations, wider range of distances/scales than the dataset above.
+  License: CC BY 4.0.
 - [Balloon Object Detection](https://www.kaggle.com/datasets/serhiibiruk/balloon-object-detection),
   Serhii Biruk. 2,365 single-class (`balloon`) images, YOLO-format
   annotations (Roboflow export). License: MIT.
