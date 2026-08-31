@@ -198,15 +198,16 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 
 `SHIELD/SHIELD/training/` fine-tunes YOLO11n on a combined drone +
 balloon dataset in place of the stock COCO weights. Three raw Kaggle
-downloads feed one combined training set — two drone sources (one
-mostly close-range, one with more distance/scale variety, to help
-detection of small/far-away targets) plus one balloon source:
+downloads plus one Unity-rendered synthetic set feed one combined
+training set — three drone sources (two real-photo, one synthetic) plus
+one balloon source:
 
-- `prepare_combined_dataset.py` — reads both raw downloads (expected
-  already unzipped under `datasets/`, which is gitignored — large
-  binary files don't belong in a public repo), remaps the balloon
-  set's labels from class 0 to class 1 so the two don't collide,
-  prefixes filenames per source, and writes the merged result to
+- `prepare_combined_dataset.py` — reads the raw downloads and the
+  synthetic set (expected already unzipped/generated under `datasets/`,
+  which is gitignored — large binary files don't belong in a public
+  repo), remaps the balloon set's labels from class 0 to class 1 so the
+  drone and balloon classes don't collide, prefixes filenames per
+  source, and writes the merged result to
   `datasets/combined_yolo/{images,labels}/{train,val}/` plus
   `training/data.yaml`. Rerun this on each machine you train from.
   `data.yaml` itself has no machine-specific paths (Ultralytics
@@ -238,6 +239,16 @@ detection of small/far-away targets) plus one balloon source:
 - [Balloon Object Detection](https://www.kaggle.com/datasets/serhiibiruk/balloon-object-detection),
   Serhii Biruk. 2,365 single-class (`balloon`) images, YOLO-format
   annotations (Roboflow export). License: MIT.
+- Unity synthetic drone renders (`datasets/unity_drone_dataset/`).
+  2,000 single-class (`drone`) 1920x1080 JPEGs with auto-generated
+  YOLO-format labels, produced by the `DroneDatasetCollectorWindow`
+  Unity Editor tool (`Test Tools/SHIELD Virtual Camera/Assets/Editor/
+  SHIELD Virtual Camera Data Collector/DroneDatasetCollectorWindow.cs`)
+  against the same virtual camera scene used for emulation. Randomizes
+  drone placement/count (1-3 per frame), camera rotation, and day/night
+  skybox; ground-truth boxes are computed from known scene transforms
+  rather than hand-labeled. Fills the sim-domain gap (day/night, camera
+  roll, multi-drone frames) the real-photo sources lack.
 
 **Compute:** training device is independent of inference device — a
 model trained on GPU runs identically on the Orin Nano's onboard GPU at
