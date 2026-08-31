@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument(
         "platform",
         choices=sorted(PLATFORM_NAMES.keys()),
-        help="0=Emulation (PC), 1=Hardware (Raspberry Pi), 2=Prototype",
+        help="0=Emulation (PC), 1=Hardware (Jetson Orin Nano), 2=Prototype",
     )
     parser.add_argument(
         "--source",

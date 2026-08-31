@@ -7,8 +7,8 @@ using UnityEngine;
 
 // Attach to the scene's Main Camera. Streams the rendered frame to a
 // local Python process over TCP so the SHIELD detect/track pipeline can
-// run against the Unity virtual camera before the Raspberry Pi + Camera
-// Module 3 hardware exists.
+// run against the Unity virtual camera before the Jetson Orin Nano +
+// e-CAM25_CUNOX hardware exists.
 //
 // Pull-based protocol: the client sends a single request byte, then
 // this sends back a 4-byte big-endian length followed by that many JPEG

@@ -1,13 +1,13 @@
 # Central configuration for the SHIELD detect/track pipeline.
 # Values here are shared between emulation (PC) and, eventually, hardware
-# (Raspberry Pi 5 + AI HAT+) runs.
+# (NVIDIA Jetson Orin Nano + e-CAM25_CUNOX) runs.
 
 # --- Model ---
 # Custom YOLO11n fine-tuned on a drone+balloon dataset (see "Custom
 # drone/balloon model" section in the repo root README.md), replacing
 # the stock COCO-pretrained weights.
 MODEL_PATH = "training/weights/drone_balloon_yolo11n_best.pt"
-DEVICE = "cpu"
+DEVICE = "cuda"
 
 # SYS.07: targeting system shall be >=90% confident before engaging.
 CONFIDENCE_THRESHOLD = 0.90

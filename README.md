@@ -21,10 +21,10 @@ The project spans two disciplines: AEE builds the airframe, propulsion,
 and interception mechanism; SWE (this repo) builds the perception and
 autonomy stack — detection, tracking, and the decision logic that hands
 off between autonomous and manually-overridden engagement. The target
-hardware is a **Raspberry Pi 5 + AI HAT+ (Hailo accelerator) + Camera
-Module 3** mounted on the drone, running the same Python pipeline that
-this repo lets you build and test on a Windows PC first, using Unity as
-a stand-in camera feed instead of the physical camera.
+hardware is an **NVIDIA Jetson Orin Nano + e-CAM25_CUNOX (AR0234 global
+shutter camera)** mounted on the drone, running the same Python pipeline
+that this repo lets you build and test on a Windows PC first, using
+Unity as a stand-in camera feed instead of the physical camera.
 
 ## Vision
 
@@ -53,8 +53,8 @@ through detection/tracking, the custom drone/balloon model, and
 emulation-level interception) run September–November 2026; a second
 semester of hardware integration and final demo follows in spring 2027.
 Only the `Emulation` platform mode (PC-based, Unity or webcam camera
-feed) is implemented today — `Hardware` (Raspberry Pi 5 + AI HAT+) and
-`Prototype` modes are reserved for later milestones. See
+feed) is implemented today — `Hardware` (Jetson Orin Nano + e-CAM25_CUNOX)
+and `Prototype` modes are reserved for later milestones. See
 [Known limitations](#known-limitations) below and the itemized milestone
 tasks in the [project plan](#team--project-links).
 
@@ -78,8 +78,8 @@ Unity "SHIELD Virtual Camera"  --TCP/JPEG-->  Python pipeline
                                     smoothed position) -> console / display
 ```
 
-On the real drone this same Python pipeline runs on the Pi 5, with the
-AI HAT+ accelerating YOLO inference and the Camera Module 3 as the
+On the real drone this same Python pipeline runs on the Orin Nano, with
+its onboard GPU accelerating YOLO inference and the e-CAM25_CUNOX as the
 source. Locally, `--source unity` or `--source webcam` stand in for that
 camera.
 
@@ -97,9 +97,10 @@ after cloning the repo. It does not cover the STE test harness
   Unity virtual camera; `--source webcam` works without Unity at all)
 - Internet access on first run (YOLO model weights auto-download, ~5 MB)
 
-A discrete GPU is optional. Inference defaults to CPU (`config.py`,
-`DEVICE = "cpu"`) to match the Pi 5's CPU-only fallback behavior and
-avoid fighting mismatched CUDA driver versions.
+Inference defaults to GPU (`config.py`, `DEVICE = "cuda"`) to match the
+Orin Nano's onboard GPU at inference time. On a dev PC without an
+NVIDIA GPU (or with a PyTorch build that doesn't match your driver),
+switch this to `DEVICE = "cpu"`.
 
 ## Quick start
 
@@ -171,7 +172,7 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 ```
 
 - `platform` — `0` = Emulation (the only one implemented today). `1`
-  (Hardware) and `2` (Prototype) are reserved for the Raspberry Pi
+  (Hardware) and `2` (Prototype) are reserved for the Jetson Orin Nano
   build and will exit with a clear message if selected.
 - `--source` — `unity` (default), `webcam`, or `file` (requires
   `--file`).
@@ -239,13 +240,13 @@ detection of small/far-away targets) plus one balloon source:
   annotations (Roboflow export). License: MIT.
 
 **Compute:** training device is independent of inference device — a
-model trained on GPU runs identically on the Pi 5's CPU-only AI HAT+
-fallback at inference time, since only training speed is affected.
+model trained on GPU runs identically on the Orin Nano's onboard GPU at
+inference time, since only training speed is affected.
 
 ## Known limitations
 
-- Only `platform 0` (Emulation) is implemented — `Hardware` (Pi 5 + AI
-  HAT+) and `Prototype` modes don't exist yet.
+- Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
+  Nano + e-CAM25_CUNOX) and `Prototype` modes don't exist yet.
 - The Unity scene has no target object or motion scripting yet.
 - `CameraStreamer.cs` reads pixels from the screen backbuffer during
   `WaitForEndOfFrame`, so the Game view needs to actually be rendering
@@ -267,11 +268,12 @@ fallback at inference time, since only training speed is affected.
   scene's camera/GameObject was destroyed, or a previous Play session
   is still holding port 5555 (stop it, or change `port` on the
   `CameraStreamer` component).
-- **Slow inference** — expected on CPU with larger models; `yolo11n.pt`
-  (the default) is the fastest. Don't switch `DEVICE` to `"cuda"`
-  without first confirming your installed PyTorch build supports your
-  GPU driver (`nvidia-smi`) — an old driver can silently fall back to
-  CPU or error out.
+- **Slow inference / CUDA errors** — `DEVICE = "cuda"` requires an
+  NVIDIA GPU and a matching PyTorch build; confirm your driver with
+  `nvidia-smi` first, since an old driver can silently fall back to CPU
+  or error out. Switch `DEVICE` to `"cpu"` in `config.py` if you don't
+  have a GPU available; `yolo11n.pt` (the default) is the fastest model
+  on CPU.
 
 ## Team & project links
 
