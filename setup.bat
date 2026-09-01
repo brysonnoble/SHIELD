@@ -51,7 +51,7 @@ if errorlevel 1 (
 echo.
 echo Pre-downloading the default YOLO model ...
 pushd "%PY_DIR%"
-"%VENV_DIR%\Scripts\python.exe" -c "from ultralytics import YOLO; YOLO('yolo11n.pt')"
+"%VENV_DIR%\Scripts\python.exe" -c "from ultralytics import YOLO; YOLO('yolo26s.pt')"
 set "MODEL_RESULT=%errorlevel%"
 popd
 if not "%MODEL_RESULT%"=="0" (

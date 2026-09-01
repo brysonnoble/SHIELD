@@ -1,4 +1,4 @@
-"""Fine-tune YOLO11n on the combined drone+balloon dataset
+"""Fine-tune YOLO26s on the combined drone+balloon dataset
 (training/data.yaml, produced by training/prepare_combined_dataset.py).
 
 Run from SHIELD/SHIELD:
@@ -20,11 +20,11 @@ from ultralytics import YOLO
 REPO_ROOT = Path(__file__).parent.parent
 DATA_YAML = str(REPO_ROOT / "training" / "data.yaml")
 PROJECT_DIR = str(REPO_ROOT / "training" / "runs")
-TRACKED_WEIGHTS = REPO_ROOT / "training" / "weights" / "drone_balloon_yolo11n_best.pt"
-BASE_MODEL = "yolo11n.pt"
+TRACKED_WEIGHTS = REPO_ROOT / "training" / "weights" / "drone_balloon_yolo26s_best.pt"
+BASE_MODEL = "yolo26s.pt"
 EPOCHS = 100
 IMG_SIZE = 640
-RUN_NAME = "drone_balloon_yolo11n"
+RUN_NAME = "drone_balloon_yolo26s"
 
 
 def main():
@@ -40,6 +40,7 @@ def main():
         patience=20,
         project=PROJECT_DIR,
         name=RUN_NAME,
+        workers=2,
     )
 
     best = model.trainer.save_dir / "weights" / "best.pt"

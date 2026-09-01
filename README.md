@@ -95,7 +95,7 @@ after cloning the repo. It does not cover the STE test harness
 - **Python 3.11+** on PATH ([python.org/downloads](https://www.python.org/downloads/))
 - **Unity Hub** + **Unity Editor 6000.3.11f1** (only if you want the
   Unity virtual camera; `--source webcam` works without Unity at all)
-- Internet access on first run (YOLO model weights auto-download, ~5 MB)
+- Internet access on first run (YOLO model weights auto-download, ~19 MB)
 
 Inference defaults to GPU (`config.py`, `DEVICE = "cuda"`) to match the
 Orin Nano's onboard GPU at inference time. On a dev PC without an
@@ -196,8 +196,11 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 
 ## Custom drone/balloon model
 
-`SHIELD/SHIELD/training/` fine-tunes YOLO11n on a combined drone +
-balloon dataset in place of the stock COCO weights. Three raw Kaggle
+`SHIELD/SHIELD/training/` fine-tunes YOLO26s on a combined drone +
+balloon dataset in place of the stock COCO weights. YOLO26 (Ultralytics,
+released January 2026) is a from-scratch redesign for edge/low-power
+deployment with NMS-free end-to-end inference, a good fit for the Orin
+Nano target. Three raw Kaggle
 downloads plus one Unity-rendered synthetic set feed one combined
 training set — three drone sources (two real-photo, one synthetic) plus
 one balloon source:
@@ -217,12 +220,12 @@ one balloon source:
 - `prepare_dataset.py` — the original drone-only variant (splits just
   the drone dataset into `datasets/drone_yolo/`). Kept around for a
   single-class drone-only run; not used by `train.py` today.
-- `train.py` — fine-tunes `yolo11n.pt` on `training/data.yaml`. Trains
+- `train.py` — fine-tunes `yolo26s.pt` on `training/data.yaml`. Trains
   on GPU automatically if CUDA is available (see `Compute` note
   below), falls back to CPU otherwise. Raw run artifacts (checkpoints,
   plots, `last.pt`) go to `training/runs/`, gitignored along with all
   other `*.pt` files. The one exception: the final `best.pt` gets
-  copied to `training/weights/drone_balloon_yolo11n_best.pt`, which IS
+  copied to `training/weights/drone_balloon_yolo26s_best.pt`, which IS
   committed - so a second machine gets the trained model via
   `git pull` rather than retraining or manually copying a file over.
 
@@ -283,8 +286,10 @@ inference time, since only training speed is affected.
   NVIDIA GPU and a matching PyTorch build; confirm your driver with
   `nvidia-smi` first, since an old driver can silently fall back to CPU
   or error out. Switch `DEVICE` to `"cpu"` in `config.py` if you don't
-  have a GPU available; `yolo11n.pt` (the default) is the fastest model
-  on CPU.
+  have a GPU available; YOLO26 is designed for real-time CPU-only
+  inference, though the smaller `yolo26n.pt` will run faster than the
+  `yolo26s.pt` base this project trains on if CPU speed becomes a
+  bottleneck.
 
 ## Team & project links
 
