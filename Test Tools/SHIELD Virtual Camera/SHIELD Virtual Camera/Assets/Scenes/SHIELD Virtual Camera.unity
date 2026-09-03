@@ -129,8 +129,9 @@ GameObject:
   m_Component:
   - component: {fileID: 959706991}
   - component: {fileID: 959706990}
+  - component: {fileID: 959706992}
   m_Layer: 0
-  m_Name: Scene Selector
+  m_Name: Scene Controller
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -148,9 +149,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 377d75da51309d24088de540271005ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  port: 5556
   daySkybox: {fileID: 2100000, guid: 3f8d603e6cde8f044b8c0ba41711def1, type: 2}
   nightSkybox: {fileID: 2100000, guid: bf9980b2dc11f9d4fb0ef93c5c66e3f1, type: 2}
-  pollInterval: 1
 --- !u!4 &959706991
 Transform:
   m_ObjectHideFlags: 0
@@ -166,6 +167,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &959706992
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 959706989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eb6d4c480054bc344af3ab7f872e1237, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DroneSpawner
+  port: 5557
+  quadPrefab: {fileID: 4277102766993258619, guid: 3bd6637ef6efedd4792f1be966bbab59, type: 3}
+  toadPrefab: {fileID: 2301454277874376679, guid: f9ae5bf00aa18b248a533526b631803a, type: 3}
+  bumbleBeePrefab: {fileID: 1165740686982719177, guid: 9938a292ff15a9743ba9187c38b8366f, type: 3}
 --- !u!1 &963194225
 GameObject:
   m_ObjectHideFlags: 0

@@ -86,8 +86,9 @@ camera.
 ## Local emulation setup
 
 The rest of this document covers getting the PC-based emulation running
-after cloning the repo. It does not cover the STE test harness
-(`Test Tools/STE`) or the mechanical/avionics side of the project.
+after cloning the repo, plus the STE test harness
+([Testing with the STE harness](#testing-with-the-ste-harness) below). It
+does not cover the mechanical/avionics side of the project.
 
 ## Prerequisites
 
@@ -126,8 +127,11 @@ Press `q` in the preview window to quit.
 
 ## Running against the Unity virtual camera
 
-1. Open `Test Tools\SHIELD Virtual Camera` in Unity Hub (Editor
-   6000.3.11f1).
+1. Open `Test Tools\SHIELD Virtual Camera\SHIELD Virtual Camera` in Unity
+   Hub (Editor 6000.3.11f1) — the Editor project itself; the outer
+   `Test Tools\SHIELD Virtual Camera\` folder is where its built standalone
+   player lives (see [Testing with the STE harness](#testing-with-the-ste-harness)
+   below), not the project.
 2. Open `Assets/Scenes/SHIELD Virtual Camera.unity` — the only scene
    in the project. (Earlier versions of this project had a separate
    scene per lighting environment, selected by build index; those
@@ -147,22 +151,80 @@ Press `q` in the preview window to quit.
    Unity isn't listening yet — start Play Mode first, or just re-run
    the command.
 
-`Assets/STE Shared Data/VirtualEnvironment.txt` selects the skybox,
-applied live (polled roughly once a second, no scene reload needed)
-by the `SceneSelector` component in the scene
-(`Assets/Scripts/SceneSelector.cs`):
+The scene's skybox and drones are driven live by the STE test harness
+over TCP rather than shared files, via two more listener components in
+the scene (both bound to `127.0.0.1` like `CameraStreamer`, on their own
+ports so they don't collide with the camera stream):
 
-| Value | Skybox |
+| Component | Port | Command | Effect |
+|---|---|---|---|
+| `SceneSelector` (`Assets/Scripts/SceneSelector.cs`) | `5556` | `ENV DAY` / `ENV NIGHT` | Swaps `RenderSettings.skybox` between `Assets/Misc/Materials/HDRI SkyLightBox [Day].mat` and `[Dusk].mat`, no scene reload. |
+| `DroneSpawner` (`Assets/Scripts/DroneSpawner.cs`) | `5557` | `SPAWN <Quad\|Toad\|BumbleBee> <x> <y> <z>` | Instantiates the matching `Assets/Prefabs/_Drone [...]` prefab at the given world coordinates. |
+
+Both are driven from the STE test library's `EditVirtualEnvironment` and
+`InstDrone` functions (`Common_Test_Functions.vb`); see
+`Test Scripts/AVS/Drone_Spawn_Test.vb` for an example. `DroneSpawner` is
+a new component not yet wired into `SHIELD Virtual Camera.unity` — add it
+to a GameObject in the scene and assign its three drone prefab fields in
+the Inspector before its commands will do anything.
+
+## Testing with the STE harness
+
+`Test Tools\STE\` holds two projects that automate the manual Unity +
+Python workflow above for the test plan:
+
+- **STE** (`STE\STE.csproj`) — a WinUI3 desktop app: a checklist of test
+  scripts plus Run/Stop/Settings.
+- **STE_Test_Solution** (`STE_Test_Solution\STE_Test_Solution\STE_Test_Solution.vbproj`) —
+  a VB.NET console app that compiles every script under this repo's
+  `Test Scripts\` folder into one exe. STE launches it once per checked
+  test, passing that test's name as a command-line argument; `Program.vb`
+  dispatches to the matching script's `Sub Main`.
+
+### One-time setup
+
+1. In the Unity Editor project (`Test Tools\SHIELD Virtual Camera\SHIELD Virtual Camera`),
+   add the **Drone Spawner** component (`Assets/Scripts/DroneSpawner.cs`) to
+   a GameObject in the scene and assign its three drone prefab fields
+   (`Assets/Prefabs/_Drone [...]`) in the Inspector — it isn't wired in by
+   default. `Scene Selector` (day/night) already is.
+2. Build a standalone Windows player for that scene (**File > Build
+   Settings > Build**) to `Test Tools\SHIELD Virtual Camera\`, filename
+   `SHIELD Virtual Camera.exe` — test scripts launch this player directly,
+   so the Editor doesn't need to be open or in Play Mode to run a test.
+3. Build both `Test Tools\STE\STE_Test_Solution\STE_Test_Solution.sln` and
+   `Test Tools\STE\STE.sln` (Visual Studio, or `dotnet build`).
+
+### Running a test
+
+1. Launch the built `STE.exe`.
+2. Check one or more scripts in the list (scanned from `Test Scripts\` at
+   startup; `Example_Test.vb` is excluded as a template, not a real test)
+   and click **Run**.
+3. For each checked test, in order: launches the Unity player and the
+   Python emulation pipeline (`python __main__.py 0 --source unity`),
+   waits for Unity's scene command listeners to come up, waits the
+   **Settings** page's configurable startup delay (default 15s) for
+   everything else — the Python preview window included — to finish
+   opening, runs the script's test cases, then closes both programs.
+4. Click **Stop** at any point to kill that whole tree (STE_Test_Solution,
+   Unity, and Python together) before it finishes on its own.
+
+### Writing a test script
+
+Add a `.vb` file under `Test Scripts\` (see
+`Test Scripts\AVS\Drone_Spawn_Test.vb`), following `Example_Test.vb`'s
+shape: a `Sub Main()` calling `BeginTest()`, one or more `TCxx()` test
+cases, then `EndTest()`. It's picked up automatically — no project file to
+edit — the next time STE_Test_Solution is rebuilt and STE is launched.
+Test-case library functions (`STE_Test_Solution\STE_Test_Solution\lib\Common_Test_Functions.vb`):
+
+| Function | Effect |
 |---|---|
-| `0` | Day (`Assets/Misc/Materials/HDRI SkyLightBox [Day].mat`) |
-| `1` | Night (`Assets/Misc/Materials/HDRI SkyLightBox [Dusk].mat`) |
-
-`VirtualEnvironment.txt` is normally written by the STE test harness;
-it currently defaults to `0` so Play Mode works standalone. Any value
-other than `0` or `1` is logged as an error in the Unity console and
-ignored — note the STE harness's own `VirtualEnvironment` enum
-(`Common_Test_Variables.vb`) predates this change and may still emit
-its old `0`-`6` range until that side is updated to match.
+| `BeginTest()` | Launches Unity + Python, waits for both to be ready. |
+| `EndTest()` | Closes both. |
+| `EditVirtualEnvironment(VirtualEnvironment.Day` / `.Night)` | Switches the skybox. |
+| `InstDrone(DroneType.Quad` / `.Toad` / `.BumbleBee, x, y, z)` | Spawns a drone at the given world coordinates. |
 
 ## Command-line reference
 
@@ -261,7 +323,10 @@ inference time, since only training speed is affected.
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
   Nano + e-CAM25_CUNOX) and `Prototype` modes don't exist yet.
-- The Unity scene has no target object or motion scripting yet.
+- `DroneSpawner` can instantiate a drone on command, but nothing moves
+  it afterward — there's no motion scripting yet, and the component
+  itself still needs to be added to a GameObject in the scene (see
+  above) before it can receive commands at all.
 - `CameraStreamer.cs` reads pixels from the screen backbuffer during
   `WaitForEndOfFrame`, so the Game view needs to actually be rendering
   (Play Mode active) — it won't work in a fully headless batch build

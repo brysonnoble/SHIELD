@@ -8,7 +8,14 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="10">
-        <Button Width="100" Height="40" Click="OpenHomePage">Home</Button>
+    <StackPanel Orientation="Vertical" Spacing="10" Padding="10">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="10">
+            <Button Width="100" Height="40" Click="OpenHomePage">Home</Button>
+        </StackPanel>
+
+        <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Left">
+            <TextBlock Text="Startup delay (seconds) before test cases run"/>
+            <TextBox x:Name="StartupDelayTextBox" Width="300" TextChanged="StartupDelayTextBox_TextChanged"/>
+        </StackPanel>
     </StackPanel>
 </Page>

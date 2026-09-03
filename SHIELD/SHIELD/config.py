@@ -3,10 +3,12 @@
 # (NVIDIA Jetson Orin Nano + e-CAM25_CUNOX) runs.
 
 # --- Model ---
-# Custom YOLO26s fine-tuned on a drone+balloon dataset (see "Custom
+# Custom YOLO fine-tuned on a drone+balloon dataset (see "Custom
 # drone/balloon model" section in the repo root README.md), replacing
 # the stock COCO-pretrained weights.
-MODEL_PATH = "training/weights/drone_balloon_yolo26s_best.pt"
+# TODO: switch back to a yolo26s build (drone_balloon_yolo26s_best.pt) once
+# retrained - drone_balloon_yolo11n_best.pt is a stand-in until then.
+MODEL_PATH = "training/weights/drone_balloon_yolo11n_best.pt"
 DEVICE = "cuda"
 
 # SYS.07: targeting system shall be >=90% confident before engaging.

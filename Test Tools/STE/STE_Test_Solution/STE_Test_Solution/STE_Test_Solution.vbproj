@@ -4,6 +4,10 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>STE_Test_Solution</RootNamespace>
     <TargetFramework>net8.0</TargetFramework>
+    <!-- Program.vb dispatches to whichever test script is named on the
+         command line (see HomePage.xaml.cs in the STE app), rather than
+         a single script picked here. -->
+    <StartupObject>STE_Test_Solution.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\..\..\Test Scripts\Example_Test.vb" Link="Example_Test.vb" />
+    <!-- Every script under Test Scripts\ compiles into this one exe, so
+         Program.vb can dispatch to any of them by name at runtime. Add a
+         new .vb file under Test Scripts\ and it's picked up automatically -
+         no edit needed here. -->
+    <Compile Include="..\..\..\..\Test Scripts\**\*.vb" LinkBase="Test Scripts" />
   </ItemGroup>
 
 </Project>

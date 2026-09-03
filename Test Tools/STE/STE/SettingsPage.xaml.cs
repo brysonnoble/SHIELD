@@ -23,10 +23,26 @@ namespace STE
     /// </summary>
     public sealed partial class SettingsPage : Page
     {
+        private bool _loaded;
+
         public SettingsPage()
         {
             InitializeComponent();
+            StartupDelayTextBox.Text = AppSettings.StartupDelaySeconds.ToString();
+            _loaded = true;
         }
+
+        private void StartupDelayTextBox_TextChanged(object sender, Microsoft.UI.Xaml.Controls.TextChangedEventArgs e)
+        {
+            if (!_loaded)
+                return;
+
+            if (int.TryParse(StartupDelayTextBox.Text, out int value) && value >= 0)
+            {
+                AppSettings.StartupDelaySeconds = value;
+            }
+        }
+
         private void OpenHomePage(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             this.Frame.Navigate(typeof(HomePage));

@@ -11,6 +11,13 @@
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
+    <!-- Bundles the Windows App SDK runtime with the app instead of relying
+         on it being registered machine-wide. Without this, the built exe
+         only runs when launched through Visual Studio's F5/Deploy step
+         (which performs that registration for the session); double-clicking
+         it directly fails silently with a "Class not registered"
+         (REGDB_E_CLASSNOTREG) exception. -->
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
 
   <ItemGroup>

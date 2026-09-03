@@ -11,8 +11,8 @@
     <StackPanel Orientation="Vertical" Spacing="10">
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Spacing="10">
             <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Debug</Button>
-            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}">Run</Button>
-            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning}">Stop</Button>
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptSelected}" Click="RunSelectedTests">Run</Button>
+            <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning}" Click="StopRunningTest">Stop</Button>
             <Button Width="100" Height="40" IsEnabled="{Binding TestScriptRunning, Converter={StaticResource Not}}">Launch Programs</Button>
             <Button Width="100" Height="40" Click="OpenSettingsPage">Settings</Button>
         </StackPanel>

@@ -124,6 +124,15 @@ UserSettings/
 # Memory captures
 [Mm]emoryCaptures/
 
+# Standalone player build output for the "SHIELD Virtual Camera" Unity
+# project (Test Tools/SHIELD Virtual Camera/) - regenerate via Build
+# Settings > Build; see README's "Testing with the STE harness". The
+# player .exe and UnityPlayer.dll are already covered by the *.exe/*.dll
+# rules further down.
+/Test Tools/SHIELD Virtual Camera/SHIELD Virtual Camera_Data/
+/Test Tools/SHIELD Virtual Camera/MonoBleedingEdge/
+/Test Tools/SHIELD Virtual Camera/D3D12/
+
 # Asset import pipeline
 Assets/AssetStoreTools*
 

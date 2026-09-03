@@ -29,6 +29,7 @@ namespace STE
     public sealed partial class HomePage : Page, INotifyPropertyChanged
     {
         private static readonly string TestScriptsRoot = GetTestScriptsRoot();
+        private static readonly string TestSolutionExePath = GetTestSolutionExePath();
         private const int MaxSubdirectoryDepth = 2;
         private const string ExcludedFileName = "Example_Test.vb";
 
@@ -49,6 +50,22 @@ namespace STE
                 }
             }
         }
+
+        private bool _testScriptRunning;
+        public bool TestScriptRunning
+        {
+            get => _testScriptRunning;
+            private set
+            {
+                if (_testScriptRunning != value)
+                {
+                    _testScriptRunning = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TestScriptRunning)));
+                }
+            }
+        }
+
+        private Process _runningProcess;
 
         public HomePage()
         {
@@ -83,6 +100,24 @@ namespace STE
             return Path.Combine(shieldDirectory, "Test Scripts");
         }
 
+        // Locates the compiled STE_Test_Solution.exe (the test dispatcher, see
+        // Program.vb) next to this source file rather than hardcoding a
+        // configuration, since STE and STE_Test_Solution are built separately
+        // and may not share a Debug/Release build at any given time.
+        private static string GetTestSolutionExePath([CallerFilePath] string sourceFilePath = "")
+        {
+            // sourceFilePath = ...\SHIELD\Test Tools\STE\STE\HomePage.xaml.cs
+            string steToolsDirectory = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(sourceFilePath), ".."));
+            string testSolutionBinDirectory = Path.Combine(steToolsDirectory, "STE_Test_Solution", "STE_Test_Solution", "bin");
+
+            if (!Directory.Exists(testSolutionBinDirectory))
+                return null;
+
+            return Directory.EnumerateFiles(testSolutionBinDirectory, "STE_Test_Solution.exe", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+        }
+
         private static IEnumerable<string> GetTestScriptFiles(string rootPath, int maxDepth)
         {
             if (!Directory.Exists(rootPath))
@@ -112,6 +147,62 @@ namespace STE
         private void OpenSettingsPage(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             this.Frame.Navigate(typeof(SettingsPage));
+        }
+
+        // Launches STE_Test_Solution.exe once per checked test, in order,
+        // passing each test's name (its path relative to Test Scripts\,
+        // without the extension) so Program.vb's dispatcher can find and
+        // invoke that script's Sub Main. Runs are sequential rather than
+        // parallel since the Unity-side TCP listeners (SceneSelector,
+        // DroneSpawner, CameraStreamer) each accept only one connection at a
+        // time.
+        private async void RunSelectedTests(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            if (TestScriptRunning)
+                return;
+
+            if (TestSolutionExePath == null)
+            {
+                Debug.WriteLine("[HomePage] Could not find STE_Test_Solution.exe. Build the STE_Test_Solution project first.");
+                return;
+            }
+
+            List<string> selectedTests = TestList.Where(t => t.IsSelected).Select(t => t.Text).ToList();
+            if (selectedTests.Count == 0)
+                return;
+
+            TestScriptRunning = true;
+            try
+            {
+                foreach (string testName in selectedTests)
+                {
+                    using (var process = new Process())
+                    {
+                        process.StartInfo.FileName = TestSolutionExePath;
+                        process.StartInfo.ArgumentList.Add(testName);
+                        process.StartInfo.ArgumentList.Add(AppSettings.StartupDelaySeconds.ToString());
+                        process.StartInfo.UseShellExecute = false;
+
+                        _runningProcess = process;
+                        process.Start();
+                        await process.WaitForExitAsync();
+                    }
+
+                    if (!TestScriptRunning)
+                        break; // Stop was pressed
+                }
+            }
+            finally
+            {
+                _runningProcess = null;
+                TestScriptRunning = false;
+            }
+        }
+
+        private void StopRunningTest(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            TestScriptRunning = false;
+            try { _runningProcess?.Kill(entireProcessTree: true); } catch { }
         }
 
         public class BoolStringClass : INotifyPropertyChanged
