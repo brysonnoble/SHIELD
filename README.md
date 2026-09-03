@@ -183,16 +183,11 @@ Python workflow above for the test plan:
 
 ### One-time setup
 
-1. In the Unity Editor project (`Test Tools\SHIELD Virtual Camera\SHIELD Virtual Camera`),
-   add the **Drone Spawner** component (`Assets/Scripts/DroneSpawner.cs`) to
-   a GameObject in the scene and assign its three drone prefab fields
-   (`Assets/Prefabs/_Drone [...]`) in the Inspector — it isn't wired in by
-   default. `Scene Selector` (day/night) already is.
-2. Build a standalone Windows player for that scene (**File > Build
+1. Build a standalone Windows player for that scene (**File > Build
    Settings > Build**) to `Test Tools\SHIELD Virtual Camera\`, filename
    `SHIELD Virtual Camera.exe` — test scripts launch this player directly,
    so the Editor doesn't need to be open or in Play Mode to run a test.
-3. Build both `Test Tools\STE\STE_Test_Solution\STE_Test_Solution.sln` and
+2. Build both `Test Tools\STE\STE_Test_Solution\STE_Test_Solution.sln` and
    `Test Tools\STE\STE.sln` (Visual Studio, or `dotnet build`).
 
 ### Running a test
