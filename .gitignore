@@ -182,6 +182,9 @@ Assets/StreamingAssets/aa/*
 # VS Code
 .vscode/
 
+# Claude Code
+.claude/
+
 # Mac system files
 .DS_Store
 
