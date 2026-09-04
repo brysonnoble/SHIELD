@@ -19,6 +19,12 @@
          it directly fails silently with a "Class not registered"
          (REGDB_E_CLASSNOTREG) exception. -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+
+    <!-- Without this, every build copies a satellite-resource folder per
+         language (af-ZA, de-DE, ja-JP, zh-CN, ...) into bin\ for the Windows
+         App SDK / WinUI runtime bundled by WindowsAppSDKSelfContained. This
+         app has no localized UI, so keep only English's. -->
+    <SatelliteResourceLanguages>en-US</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
@@ -77,4 +83,19 @@
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
   </PropertyGroup>
+
+  <!-- AddMicrosoftWindowsAppSDKPayloadFilesFromComponents, in the
+       Microsoft.WindowsAppSDK.SelfContained NuGet package's own targets
+       (unrelated to .NET's SatelliteResourceLanguages above, which doesn't
+       reach it), globs every *.mui/*.png/etc. under each dependency's
+       runtimes-framework\win-$(Platform)\native\<culture>\ and adds them as
+       copy-to-output items - one folder per culture (de-DE, ja-JP, zh-CN,
+       ...) it supports. This app has no localized UI, so drop every culture
+       but en-us right after that target runs. -->
+  <Target Name="RemoveLocalizedWinAppSdkResources" AfterTargets="AddMicrosoftWindowsAppSDKPayloadFilesFromComponents">
+    <ItemGroup>
+      <None Remove="@(None)"
+        Condition="'%(RecursiveDir)' != '' and '%(RecursiveDir)' != 'en-us\' and $([System.String]::Copy('%(Identity)').Contains('runtimes-framework'))" />
+    </ItemGroup>
+  </Target>
 </Project>
