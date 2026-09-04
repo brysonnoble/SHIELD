@@ -54,14 +54,14 @@ namespace STE
             return new List<LaunchableProgram>
             {
                 new LaunchableProgram(
-                    name: "SHIELD Virtual Camera (Unity)",
+                    name: "SHIELD Virtual Camera",
                     fileName: Path.Combine(shieldDirectory, "Test Tools", "SHIELD Virtual Camera", "SHIELD Virtual Camera.exe")),
 
                 // Matches README.md's "Running against the Unity virtual camera":
                 //   cd "SHIELD\SHIELD"
                 //   .venv\Scripts\python __main__.py 0 --source unity
                 new LaunchableProgram(
-                    name: "SHIELD Detection Pipeline (Python)",
+                    name: "SHIELD Ground Control System",
                     fileName: Path.Combine(shieldAppDirectory, ".venv", "Scripts", "python.exe"),
                     arguments: new[] { "__main__.py", "0", "--source", "unity" },
                     workingDirectory: shieldAppDirectory),
