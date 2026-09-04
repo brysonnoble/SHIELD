@@ -43,6 +43,7 @@ def build_source(args):
             port=config.UNITY_PORT,
             connect_retries=config.UNITY_CONNECT_RETRIES,
             retry_delay=config.UNITY_RETRY_DELAY_SEC,
+            read_timeout=config.UNITY_READ_TIMEOUT_SEC,
         )
     if args.source == "webcam":
         return WebcamSource(index=args.camera_index)
@@ -53,6 +54,30 @@ def build_source(args):
     raise ValueError(f"Unknown source {args.source}")
 
 
+def _pump_tick(window):
+    """Pump the Tk event loop once. Used as the on_wait callback for any
+    blocking wait (initial connect, reconnect backoff) so the GCS window
+    keeps redrawing - and stays closable - instead of appearing frozen for
+    the whole wait. Returns True if the window was closed, so the wait
+    loop calling this can bail out early instead of finishing its delay.
+    """
+    if window is None:
+        return False
+    window.pump()
+    return window.closed
+
+
+def _wait_pumping(window, seconds):
+    """Sleep for `seconds`, pumping `window` throughout instead of
+    blocking it. Returns True if the window was closed during the wait."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if _pump_tick(window):
+            return True
+        time.sleep(0.05)
+    return False
+
+
 def run_emulation(args):
     source = build_source(args)
     detector = SHIELDDetector()
@@ -60,9 +85,28 @@ def run_emulation(args):
     profile_stats = {"read": 0.0, "detect": 0.0, "render": 0.0, "pump": 0.0, "n": 0} if args.profile else None
 
     print(f"[SHIELD] Starting emulation with source={args.source}")
-    source.open()
     consecutive_immediate_drops = 0
     try:
+        if window is not None:
+            window.set_link_status("Connecting...", "warn")
+            window.pump()
+        try:
+            source.open(on_wait=lambda: _pump_tick(window))
+        except (ConnectionError, RuntimeError) as exc:
+            # Was previously unguarded: on total failure to connect (e.g.
+            # no stream source available at all) this raised straight out
+            # of run_emulation, skipping the finally block below - the
+            # window never got destroyed or pumped again, so it just sat
+            # there looking frozen instead of reporting the real error.
+            print(f"[SHIELD] {exc}")
+            if window is not None:
+                window.set_link_status("No video source - see console", "bad")
+                _wait_pumping(window, 5.0)
+            return
+        if window is not None:
+            window.set_link_status("Link stable", "ok")
+            window.pump()
+
         while True:
             if window is not None and window.closed:
                 break
@@ -96,20 +140,28 @@ def run_emulation(args):
 
                     print("[SHIELD] Lost connection to Unity, reconnecting...")
                     if window is not None:
-                        window.set_link_status("Reconnecting...", "warn")
+                        window.set_link_status("Video feed lost - reconnecting...", "bad")
+                        if _pump_tick(window):
+                            break
                     source.release()
-                    time.sleep(1.0)
+                    if _wait_pumping(window, 1.0):
+                        break
                     try:
-                        source.open()
+                        source.open(on_wait=lambda: _pump_tick(window))
                     except ConnectionError as exc:
                         print(f"[SHIELD] Reconnect failed: {exc}")
+                        if window is not None:
+                            window.set_link_status("Video feed lost - link down", "bad")
+                            window.pump()
                         break
                     if window is not None:
                         window.set_link_status("Link stable", "ok")
+                        window.pump()
                     continue
                 print("[SHIELD] Video source ended or disconnected.")
                 if window is not None:
-                    window.set_link_status("Link lost", "bad")
+                    window.set_link_status("Video feed lost - source disconnected", "bad")
+                    window.pump()
                 break
 
             t0 = time.perf_counter()

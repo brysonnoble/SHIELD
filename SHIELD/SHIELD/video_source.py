@@ -11,7 +11,11 @@ import numpy as np
 
 
 class VideoSource:
-    def open(self):
+    def open(self, on_wait=None):
+        """on_wait: optional callback a subclass with a connect-retry loop
+        can invoke periodically instead of blocking outright (e.g. so a
+        caller can keep a UI pumped). Unused by sources that open
+        immediately or fail immediately."""
         raise NotImplementedError
 
     def read(self):
@@ -28,7 +32,7 @@ class WebcamSource(VideoSource):
         self.index = index
         self._cap = None
 
-    def open(self):
+    def open(self, on_wait=None):
         self._cap = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open webcam index {self.index}")
@@ -48,7 +52,7 @@ class VideoFileSource(VideoSource):
         self.loop = loop
         self._cap = None
 
-    def open(self):
+    def open(self, on_wait=None):
         self._cap = cv2.VideoCapture(self.path)
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open video file {self.path}")
@@ -92,18 +96,28 @@ class UnityStreamSource(VideoSource):
     Unity captured after the request was made.
     """
 
-    def __init__(self, host, port, connect_retries=15, retry_delay=1.0):
+    def __init__(self, host, port, connect_retries=15, retry_delay=1.0, read_timeout=2.0):
         self.host = host
         self.port = port
         self.connect_retries = connect_retries
         self.retry_delay = retry_delay
+        # AVS.05.01: no dedicated heartbeat message exists on the wire yet,
+        # so each frame request doubles as the liveness check - if Unity
+        # doesn't answer within this many seconds the link is declared
+        # dead. Set independently of the connect timeout below: leaving a
+        # socket's connect-timeout in place after connect() also throttles
+        # every later recv(), which is what silently capped detection of a
+        # dropped link at 5s (and froze the GCS window for that whole
+        # window, since nothing pumps Tk while blocked in recv()).
+        self.read_timeout = read_timeout
         self._sock = None
 
-    def open(self):
+    def open(self, on_wait=None):
         last_error = None
         for attempt in range(1, self.connect_retries + 1):
             try:
                 self._sock = socket.create_connection((self.host, self.port), timeout=5.0)
+                self._sock.settimeout(self.read_timeout)
                 self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 print(f"[UnityStreamSource] Connected to Unity at {self.host}:{self.port}")
                 return
@@ -114,10 +128,24 @@ class UnityStreamSource(VideoSource):
                     f"({attempt}/{self.connect_retries})... is Play Mode running "
                     f"with CameraStreamer attached?"
                 )
-                time.sleep(self.retry_delay)
+                self._wait(self.retry_delay, on_wait)
         raise ConnectionError(
             f"Could not connect to Unity virtual camera at {self.host}:{self.port}: {last_error}"
         )
+
+    @staticmethod
+    def _wait(seconds, on_wait):
+        # Chunk the wait so a caller-supplied on_wait callback (e.g. pumping
+        # a Tk window) keeps running instead of the whole process blocking
+        # for `seconds` straight.
+        if on_wait is None:
+            time.sleep(seconds)
+            return
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if on_wait():
+                return
+            time.sleep(0.05)
 
     def read(self):
         if self._sock is None:

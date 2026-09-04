@@ -51,12 +51,13 @@ ENGAGE_CONFIDENCE_FLOOR = 0.25
 # dropped from this list here means the detector has dropped it too.
 TRACK_CACHE_EXPIRE_UPDATES = config.TRACK_MAX_AGE
 
-# No real time-to-intercept model exists yet, so this mirrors the
-# mockup's demo countdown rather than claiming a computed value.
-PLACEHOLDER_TTI_SEC = 47
+# TODO: compute a real time-to-intercept once a targeting/intercept model
+# exists. Until then the HUD readout stays "--:--" rather than faking a
+# countdown.
 
 # BGR (cv2 draws BGR, not RGB) versions of the palette above.
 _BOX_COLOR_BGR = (165, 202, 93)      # GREEN
+_ENGAGED_BOX_COLOR_BGR = (74, 75, 226)  # RED
 _MARKER_COLOR_BGR = (232, 236, 233)  # TEXT_BRIGHT
 _RETICLE_COLOR_BGR = (190, 200, 195)
 
@@ -67,23 +68,46 @@ class _CacheEntry:
     updates_since_seen: int = 0
 
 
-def _draw_hud(frame, detections):
+def _draw_reticle(annotated, cx, cy):
+    # EO/IR targeting-pod style reticle (Predator/Reaper-esque): a broken
+    # cross with an open center so the aim point itself isn't obscured,
+    # plus short cardinal tick marks rather than a solid crosshair or ring.
+    gap = 5
+    arm = 10
+    tick_r = 22
+    tick = 4
+    for dx, dy in ((0, -1), (0, 1), (-1, 0), (1, 0)):
+        cv2.line(
+            annotated,
+            (cx + dx * gap, cy + dy * gap),
+            (cx + dx * (gap + arm), cy + dy * (gap + arm)),
+            _RETICLE_COLOR_BGR, 1, cv2.LINE_AA,
+        )
+        cv2.line(
+            annotated,
+            (cx + dx * tick_r, cy + dy * tick_r),
+            (cx + dx * (tick_r + tick), cy + dy * (tick_r + tick)),
+            _RETICLE_COLOR_BGR, 1, cv2.LINE_AA,
+        )
+    cv2.circle(annotated, (cx, cy), 1, _RETICLE_COLOR_BGR, -1, cv2.LINE_AA)
+
+
+def _draw_hud(frame, detections, engaged_id=None):
     annotated = frame.copy()
     h, w = annotated.shape[:2]
 
     cx, cy = w // 2, h // 2
-    cv2.line(annotated, (cx, cy - 18), (cx, cy + 18), _RETICLE_COLOR_BGR, 1, cv2.LINE_AA)
-    cv2.line(annotated, (cx - 18, cy), (cx + 18, cy), _RETICLE_COLOR_BGR, 1, cv2.LINE_AA)
-    cv2.circle(annotated, (cx, cy), 24, _RETICLE_COLOR_BGR, 1, cv2.LINE_AA)
+    _draw_reticle(annotated, cx, cy)
 
     for det in detections:
+        color = _ENGAGED_BOX_COLOR_BGR if det.track_id == engaged_id else _BOX_COLOR_BGR
         x1, y1, x2, y2 = (int(v) for v in det.bbox)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), _BOX_COLOR_BGR, 1, cv2.LINE_AA)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
 
         label = f"T-{det.track_id:02d} {det.confidence:.2f}"
         cv2.putText(
             annotated, label, (x1, max(10, y1 - 6)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.45, _BOX_COLOR_BGR, 1, cv2.LINE_AA,
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
         )
 
         scx, scy = det.smoothed_center
@@ -97,8 +121,6 @@ class SHIELDGCSWindow:
         self.closed = False
         self._selected_id = None
         self._engaged = False
-        self._tti_remaining = None
-        self._tick_after_id = None
         self._error_after_id = None
         self._cache: dict[int, _CacheEntry] = {}
         self._photo = None  # keep a reference so Tk doesn't GC the image
@@ -162,6 +184,23 @@ class SHIELDGCSWindow:
             0, 0, text="", fill=AMBER_TEXT, font=(FONT, 9), state="hidden",
         )
 
+        # Full-canvas banner for a dead/degraded video source (as opposed
+        # to _lost_bg_id/_lost_text_id above, which flag a degraded
+        # *target track* while the feed itself is still live). Sits over
+        # the last frame so a frozen stale image never reads as "fine".
+        self._signal_bg_id = self.video_canvas.create_rectangle(
+            0, 0, 0, 0, fill=BG_PANEL, outline=RED, width=2, state="hidden",
+        )
+        self._signal_title_id = self.video_canvas.create_text(
+            0, 0, text="", fill=RED_TEXT, font=(FONT, 13, "bold"),
+            justify="center", width=280, state="hidden",
+        )
+        self._signal_detail_id = self.video_canvas.create_text(
+            0, 0, text="", fill=TEXT_DIM, font=(FONT, 9),
+            justify="center", width=280, state="hidden",
+        )
+        self._link_ok = True
+
         tk.Label(
             panel, text="Targets", bg=BG_PANEL, fg=TEXT_DIM, font=(FONT, 9), anchor="w",
         ).pack(fill="x")
@@ -185,6 +224,14 @@ class SHIELDGCSWindow:
     def set_link_status(self, text, level="ok"):
         color = {"ok": GREEN, "warn": AMBER_TEXT, "bad": RED_TEXT}[level]
         self.link_label.config(text=f"● {text}", fg=color)
+        self._link_ok = level == "ok"
+        if not self._link_ok:
+            # A dead/degraded link means whatever's on screen is a stale
+            # frame, not a live one - don't let the fps readout keep
+            # reporting the rate it was updating at before the drop.
+            self._fps = 0.0
+            self.fps_label.config(text="-- fps")
+        self._update_signal_banner(text, level)
 
     def update_frame(self, frame, detections):
         self._update_fps()
@@ -203,11 +250,6 @@ class SHIELDGCSWindow:
             self.closed = True
 
     def destroy(self):
-        if self._tick_after_id is not None:
-            try:
-                self.root.after_cancel(self._tick_after_id)
-            except tk.TclError:
-                pass
         try:
             self.root.destroy()
         except tk.TclError:
@@ -248,12 +290,44 @@ class SHIELDGCSWindow:
         # arrived yet, so dragging the window edge feels live.
         if self._last_raw_frame is not None:
             self._render_video(self._last_raw_frame, self._last_detections)
+        if not self._link_ok:
+            self._position_signal_banner()
+
+    def _update_signal_banner(self, text, level):
+        show = level in ("warn", "bad")
+        state = "normal" if show else "hidden"
+        for item in (self._signal_bg_id, self._signal_title_id, self._signal_detail_id):
+            self.video_canvas.itemconfig(item, state=state)
+        if not show:
+            return
+        headline = "RECONNECTING..." if level == "warn" else "NO VIDEO SIGNAL"
+        self.video_canvas.itemconfig(self._signal_title_id, text=headline)
+        self.video_canvas.itemconfig(self._signal_detail_id, text=text)
+        self._position_signal_banner()
+        for item in (self._signal_bg_id, self._signal_title_id, self._signal_detail_id):
+            self.video_canvas.tag_raise(item)
+
+    def _position_signal_banner(self):
+        avail_w = self.video_canvas.winfo_width()
+        avail_h = self.video_canvas.winfo_height()
+        if avail_w < 2 or avail_h < 2:
+            avail_w, avail_h = DISPLAY_WIDTH, 360
+        cx, cy = avail_w // 2, avail_h // 2
+        box_w = max(200, min(avail_w - 20, 320))
+        box_h = 74
+        self.video_canvas.coords(
+            self._signal_bg_id,
+            cx - box_w // 2, cy - box_h // 2, cx + box_w // 2, cy + box_h // 2,
+        )
+        self.video_canvas.coords(self._signal_title_id, cx, cy - 13)
+        self.video_canvas.coords(self._signal_detail_id, cx, cy + 13)
 
     def _render_video(self, frame, detections):
         self._last_raw_frame = frame
         self._last_detections = detections
 
-        annotated = _draw_hud(frame, detections)
+        engaged_id = self._selected_id if self._engaged else None
+        annotated = _draw_hud(frame, detections, engaged_id=engaged_id)
         h, w = annotated.shape[:2]
 
         avail_w = self.video_canvas.winfo_width()
@@ -383,8 +457,6 @@ class SHIELDGCSWindow:
     def _start_engage(self):
         self._engaged = True
         self._hide_error()
-        self._tti_remaining = PLACEHOLDER_TTI_SEC
-        self.video_canvas.itemconfig(self._tti_text_id, text=self._fmt_time(self._tti_remaining))
         self.mode_label.config(text="Engaged", fg=RED_TEXT)
         self.engage_btn.config(
             text="Abort", bg=RED, fg="#ffffff", activebackground=RED,
@@ -393,31 +465,15 @@ class SHIELDGCSWindow:
         )
         self._render_list()
         self._update_lost_banner()
-        self._tick_after_id = self.root.after(1000, self._tick)
         print(f"[SHIELD] ENGAGE issued for track T-{self._selected_id:02d} (UI only; no effector wired up yet)")
 
     def _do_abort(self):
         self._engaged = False
-        if self._tick_after_id is not None:
-            self.root.after_cancel(self._tick_after_id)
-            self._tick_after_id = None
-        self._tti_remaining = None
-        self.video_canvas.itemconfig(self._tti_text_id, text="--:--")
         self.mode_label.config(text="Tracking", fg=GREEN)
         self.engage_btn.config(highlightthickness=0)
         self._update_button_state()
         self._update_lost_banner()
         print("[SHIELD] ABORT")
-
-    def _tick(self):
-        if not self._engaged or self._tti_remaining is None:
-            return
-        self._tti_remaining = max(0, self._tti_remaining - 1)
-        self.video_canvas.itemconfig(self._tti_text_id, text=self._fmt_time(self._tti_remaining))
-        if self._tti_remaining > 0:
-            self._tick_after_id = self.root.after(1000, self._tick)
-        else:
-            self._tick_after_id = None
 
     def _update_lost_banner(self):
         show = False
@@ -443,8 +499,3 @@ class SHIELDGCSWindow:
     def _hide_error(self):
         self._error_after_id = None
         self.error_label.pack_forget()
-
-    @staticmethod
-    def _fmt_time(seconds):
-        m, s = divmod(int(seconds), 60)
-        return f"{m:02d}:{s:02d}"

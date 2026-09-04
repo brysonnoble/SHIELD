@@ -35,5 +35,11 @@ UNITY_PORT = 5555
 UNITY_CONNECT_RETRIES = 15
 UNITY_RETRY_DELAY_SEC = 1.0
 
+# AVS.05.01: the link to the video source shall be heartbeat-monitored.
+# Every frame request doubles as that heartbeat - if Unity doesn't answer
+# within this many seconds, the link is declared dead rather than left to
+# whatever a bare socket recv() would eventually time out at.
+UNITY_READ_TIMEOUT_SEC = 2.0
+
 # --- Webcam fallback ---
 WEBCAM_INDEX = 0

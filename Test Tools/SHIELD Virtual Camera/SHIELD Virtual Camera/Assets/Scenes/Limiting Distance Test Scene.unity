@@ -789,7 +789,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraStreamer
   port: 5555
-  targetFps: 15
+  targetFps: 30
   jpegQuality: 75
   maxWidth: 1920
   maxHeight: 1080

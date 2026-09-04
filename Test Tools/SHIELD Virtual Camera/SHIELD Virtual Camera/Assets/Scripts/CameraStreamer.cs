@@ -22,7 +22,7 @@ public class CameraStreamer : MonoBehaviour
     public int port = 5555;
 
     [Header("Capture")]
-    [Range(1, 30)] public int targetFps = 15;
+    [Range(1, 30)] public int targetFps = 30;
     [Range(10, 100)] public int jpegQuality = 75;
     [Tooltip("Frames larger than this are downscaled before JPEG encoding (aspect ratio preserved).")]
     public int maxWidth = 1920;
