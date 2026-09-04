@@ -7,6 +7,8 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
@@ -25,10 +27,17 @@ namespace STE
     {
         private bool _loaded;
 
+        public ObservableCollection<ProgramSelection> Programs { get; }
+
         public SettingsPage()
         {
             InitializeComponent();
             StartupDelayTextBox.Text = AppSettings.StartupDelaySeconds.ToString();
+
+            Programs = new ObservableCollection<ProgramSelection>(
+                LaunchablePrograms.All.Select(p => new ProgramSelection(p.Name)));
+
+            this.DataContext = this;
             _loaded = true;
         }
 
@@ -46,6 +55,34 @@ namespace STE
         private void OpenHomePage(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             this.Frame.Navigate(typeof(HomePage));
+        }
+
+        public class ProgramSelection : INotifyPropertyChanged
+        {
+            public event PropertyChangedEventHandler PropertyChanged;
+
+            public string Name { get; }
+
+            private bool _isSelected;
+            public bool IsSelected
+            {
+                get => _isSelected;
+                set
+                {
+                    if (_isSelected != value)
+                    {
+                        _isSelected = value;
+                        AppSettings.SetProgramSelected(Name, value, LaunchablePrograms.All.Select(p => p.Name));
+                        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+                    }
+                }
+            }
+
+            public ProgramSelection(string name)
+            {
+                Name = name;
+                _isSelected = AppSettings.IsProgramSelected(name);
+            }
         }
     }
 }

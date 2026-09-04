@@ -61,11 +61,51 @@ namespace STE
                 {
                     _testScriptRunning = value;
                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TestScriptRunning)));
+                    UpdateAnyRunning();
                 }
             }
         }
 
+        private bool _programsRunning;
+        public bool ProgramsRunning
+        {
+            get => _programsRunning;
+            private set
+            {
+                if (_programsRunning != value)
+                {
+                    _programsRunning = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgramsRunning)));
+                    UpdateAnyRunning();
+                }
+            }
+        }
+
+        // Backs the Stop button's IsEnabled (either a test run or a manual
+        // "Launch Programs" click can leave processes for Stop to kill) and
+        // Launch Programs' IsEnabled (don't launch a second batch on top of
+        // an already-running one).
+        private bool _anyRunning;
+        public bool AnyRunning
+        {
+            get => _anyRunning;
+            private set
+            {
+                if (_anyRunning != value)
+                {
+                    _anyRunning = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AnyRunning)));
+                }
+            }
+        }
+
+        private void UpdateAnyRunning()
+        {
+            AnyRunning = TestScriptRunning || ProgramsRunning;
+        }
+
         private Process _runningProcess;
+        private readonly List<Process> _launchedProgramProcesses = new List<Process>();
 
         public HomePage()
         {
@@ -199,10 +239,47 @@ namespace STE
             }
         }
 
+        // Starts every program checked in Settings' program list directly
+        // (Process.Start, not through STE_Test_Solution.exe), independent of
+        // whatever's checked in TestList - this never runs a test script.
+        private void LaunchPrograms(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            if (AnyRunning)
+                return;
+
+            List<LaunchableProgram> selectedPrograms = LaunchablePrograms.All
+                .Where(p => AppSettings.IsProgramSelected(p.Name))
+                .ToList();
+
+            if (selectedPrograms.Count == 0)
+                return;
+
+            foreach (LaunchableProgram program in selectedPrograms)
+            {
+                try
+                {
+                    _launchedProgramProcesses.Add(program.Start());
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HomePage] Failed to launch '{program.Name}': {ex.Message}");
+                }
+            }
+
+            ProgramsRunning = _launchedProgramProcesses.Count > 0;
+        }
+
         private void StopRunningTest(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             TestScriptRunning = false;
             try { _runningProcess?.Kill(entireProcessTree: true); } catch { }
+
+            foreach (Process process in _launchedProgramProcesses)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+            }
+            _launchedProgramProcesses.Clear();
+            ProgramsRunning = false;
         }
 
         public class BoolStringClass : INotifyPropertyChanged

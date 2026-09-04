@@ -17,5 +17,16 @@
             <TextBlock Text="Startup delay (seconds) before test cases run"/>
             <TextBox x:Name="StartupDelayTextBox" Width="300" TextChanged="StartupDelayTextBox_TextChanged"/>
         </StackPanel>
+
+        <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Left">
+            <TextBlock Text="Programs started by the Launch Programs button"/>
+            <ListBox ItemsSource="{Binding Programs}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Name}"/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </StackPanel>
     </StackPanel>
 </Page>
