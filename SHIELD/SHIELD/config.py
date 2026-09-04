@@ -11,7 +11,9 @@
 MODEL_PATH = "training/weights/drone_balloon_yolo11n_best.pt"
 DEVICE = "cuda"
 
-# SYS.07: targeting system shall be >=90% confident before engaging.
+# Detector confidence floor for candidate detections - not an engagement
+# gate. See AVS.03 for the >=25% confidence-while-en-route requirement,
+# enforced in the GCS UI (gcs_ui.ENGAGE_CONFIDENCE_FLOOR).
 CONFIDENCE_THRESHOLD = 0.05
 
 # The custom model has two classes: "drone" and "balloon". Set to e.g.

@@ -2,9 +2,8 @@ import argparse
 import sys
 import time
 
-import cv2
-
 import config
+from gcs_ui import SHIELDGCSWindow
 from object_detection import SHIELDDetector
 from video_source import UnityStreamSource, VideoFileSource, WebcamSource
 
@@ -30,6 +29,10 @@ def parse_args():
         help="Webcam index when --source webcam",
     )
     parser.add_argument("--no-display", action="store_true", help="Don't open a preview window")
+    parser.add_argument(
+        "--profile", action="store_true",
+        help="Print average per-stage timing (read/detect/render/pump) every 30 frames",
+    )
     return parser.parse_args()
 
 
@@ -53,14 +56,22 @@ def build_source(args):
 def run_emulation(args):
     source = build_source(args)
     detector = SHIELDDetector()
+    window = SHIELDGCSWindow() if not args.no_display else None
+    profile_stats = {"read": 0.0, "detect": 0.0, "render": 0.0, "pump": 0.0, "n": 0} if args.profile else None
 
     print(f"[SHIELD] Starting emulation with source={args.source}")
     source.open()
     consecutive_immediate_drops = 0
     try:
         while True:
+            if window is not None and window.closed:
+                break
+
             frame_start = time.monotonic()
+            t0 = time.perf_counter()
             frame = source.read()
+            if profile_stats is not None:
+                profile_stats["read"] += time.perf_counter() - t0
             if frame is None:
                 if args.source == "unity":
                     # If the connection dies within ~1s of being (re)opened,
@@ -84,6 +95,8 @@ def run_emulation(args):
                         break
 
                     print("[SHIELD] Lost connection to Unity, reconnecting...")
+                    if window is not None:
+                        window.set_link_status("Reconnecting...", "warn")
                     source.release()
                     time.sleep(1.0)
                     try:
@@ -91,11 +104,18 @@ def run_emulation(args):
                     except ConnectionError as exc:
                         print(f"[SHIELD] Reconnect failed: {exc}")
                         break
+                    if window is not None:
+                        window.set_link_status("Link stable", "ok")
                     continue
                 print("[SHIELD] Video source ended or disconnected.")
+                if window is not None:
+                    window.set_link_status("Link lost", "bad")
                 break
 
+            t0 = time.perf_counter()
             detections = detector.process_frame(frame)
+            if profile_stats is not None:
+                profile_stats["detect"] += time.perf_counter() - t0
             for det in detections:
                 cx, cy = det.smoothed_center
                 print(
@@ -103,14 +123,40 @@ def run_emulation(args):
                     f"conf={det.confidence:.2f} pos=({cx:.0f},{cy:.0f})"
                 )
 
-            if not args.no_display:
-                annotated = detector.annotate(frame, detections)
-                cv2.imshow("SHIELD - Emulation", annotated)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
+            if window is not None:
+                t0 = time.perf_counter()
+                window.update_frame(frame, detections)
+                if profile_stats is not None:
+                    profile_stats["render"] += time.perf_counter() - t0
+
+                t0 = time.perf_counter()
+                window.pump()
+                if profile_stats is not None:
+                    profile_stats["pump"] += time.perf_counter() - t0
+
+            if profile_stats is not None:
+                profile_stats["n"] += 1
+                if profile_stats["n"] >= 30:
+                    n = profile_stats["n"]
+                    canvas_size = (
+                        f"{window.video_canvas.winfo_width()}x{window.video_canvas.winfo_height()}"
+                        if window is not None else "n/a"
+                    )
+                    print(
+                        f"[SHIELD][profile] canvas={canvas_size} "
+                        f"read={profile_stats['read'] / n * 1000:.1f}ms "
+                        f"detect={profile_stats['detect'] / n * 1000:.1f}ms "
+                        f"render={profile_stats['render'] / n * 1000:.1f}ms "
+                        f"pump={profile_stats['pump'] / n * 1000:.1f}ms "
+                        f"total={sum(v for k, v in profile_stats.items() if k != 'n') / n * 1000:.1f}ms"
+                    )
+                    for key in ("read", "detect", "render", "pump"):
+                        profile_stats[key] = 0.0
+                    profile_stats["n"] = 0
     finally:
         source.release()
-        cv2.destroyAllWindows()
+        if window is not None:
+            window.destroy()
 
 
 def main():
