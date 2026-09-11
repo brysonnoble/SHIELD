@@ -182,7 +182,7 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | Setting | Purpose |
 |---|---|
 | `MODEL_PATH` | YOLO weights file. |
-| `CONFIDENCE_THRESHOLD` | Minimum detection confidence (0.90, traceable to SRR requirement SYS.07). |
+| `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.05) - not an engagement gate. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
 | `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
 | `TRACK_MAX_AGE` | Frames a track can go undetected before its Kalman filter is dropped. |
@@ -256,15 +256,9 @@ inference time, since only training speed is affected.
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
   Nano + e-CAM25_CUNOX) and `Prototype` modes don't exist yet.
-- `DroneSpawner` can instantiate a drone on command, but nothing moves
-  it afterward — there's no motion scripting yet, and the component
-  itself still needs to be added to a GameObject in the scene (see
-  [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)) before it can
-  receive commands at all.
-- `CameraStreamer.cs` reads pixels from the screen backbuffer during
-  `WaitForEndOfFrame`, so the Game view needs to actually be rendering
-  (Play Mode active) — it won't work in a fully headless batch build
-  without further changes.
+- `DroneSpawner` can instantiate (and despawn all) drones on command, but
+  nothing moves a drone once it's spawned — there's no motion scripting
+  yet (see [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)).
 
 ## Troubleshooting
 
