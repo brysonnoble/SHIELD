@@ -2,31 +2,29 @@ Imports System
 
 Module Example_Test
     Sub Main()
-        BeginTest()
-
-        TC01()
-        TC02()
-        TC03()
-
-        EndTest()
+        Try
+            BeginTest()
+            RunTestCase(AddressOf TC01)
+            RunTestCase(AddressOf TC02)
+            RunTestCase(AddressOf TC03)
+        Finally
+            EndTest()
+        End Try
     End Sub
 
+    ' RunTestCase() calls TestCaseBegin()/TestCaseEnd() around this and
+    ' records PASS/FAIL for EndTest()'s summary - a TCxx() only needs to
+    ' TraceTo() and assert.
     Sub TC01()
-        TestCaseBegin()
         TraceTo("REQ_NAME")
         ' Test Case 01
-        TestCaseEnd()
     End Sub
     Sub TC02()
-        TestCaseBegin()
         TraceTo("REQ_NAME")
         ' Test Case 02
-        TestCaseEnd()
     End Sub
     Sub TC03()
-        TestCaseBegin()
         TraceTo("REQ_NAME")
         ' Test Case 03
-        TestCaseEnd()
     End Sub
 End Module
