@@ -1,4 +1,5 @@
-﻿Imports System.Net.Sockets
+﻿Imports System.Collections.Concurrent
+Imports System.Net.Sockets
 Imports System.Text
 Imports System.Threading
 
@@ -18,6 +19,50 @@ Public Module Common_Core_Functions
         End If
         process.Start()
         Return process
+    End Function
+
+    ' Like RunProcess, but redirects stdout/stderr instead of letting the
+    ' child inherit the console, so a test case can search what the process
+    ' printed (see Common_Test_Checks.vb) instead of only eyeballing the
+    ' log. Every line is queued (for later/repeated searching) and also
+    ' handed to onLine as it arrives, if given, e.g. to relay it into
+    ' WriteLog() so it still shows up in the run's log/console exactly like
+    ' an unredirected process's output would have.
+    '
+    ' The launched process should disable its own stdout buffering (e.g.
+    ' Python's "-u" flag) - otherwise output can sit in the child's buffer
+    ' for a long time before a test's WaitForLogMatch-style check ever sees
+    ' it, since a pipe (unlike a real console) doesn't get line-buffered by
+    ' default.
+    Public Function RunProcessCapturingOutput(filePath As String,
+                    Optional arguments As String = "",
+                    Optional workingDirectory As String = "",
+                    Optional onLine As Action(Of String) = Nothing) _
+                    As (Process As Process, Output As ConcurrentQueue(Of String))
+        Dim process As New Process()
+        process.StartInfo.FileName = filePath
+        process.StartInfo.Arguments = arguments
+        process.StartInfo.UseShellExecute = False
+        process.StartInfo.RedirectStandardOutput = True
+        process.StartInfo.RedirectStandardError = True
+        process.StartInfo.CreateNoWindow = True
+        If workingDirectory <> "" Then
+            process.StartInfo.WorkingDirectory = workingDirectory
+        End If
+
+        Dim output As New ConcurrentQueue(Of String)
+        Dim handler As DataReceivedEventHandler = Sub(sender As Object, e As DataReceivedEventArgs)
+                                                       If e.Data Is Nothing Then Return
+                                                       output.Enqueue(e.Data)
+                                                       onLine?.Invoke(e.Data)
+                                                   End Sub
+        AddHandler process.OutputDataReceived, handler
+        AddHandler process.ErrorDataReceived, handler
+
+        process.Start()
+        process.BeginOutputReadLine()
+        process.BeginErrorReadLine()
+        Return (process, output)
     End Function
 
     ' Closes a process previously started by RunProcess, along with any
@@ -45,6 +90,20 @@ Public Module Common_Core_Functions
         Catch
         End Try
     End Sub
+
+    ' Finds every already-running process launched from the given
+    ' executable path, matched by image name (Process.GetProcessesByName
+    ' ignores the path, just the file name without ".exe"). Used to find a
+    ' leftover orphan from a previous crashed/killed run - e.g. one still
+    ' holding a scene's TCP ports - before launching a fresh instance.
+    ' Caller is responsible for closing (see Common_Test_Functions.vb's
+    ' CloseUnityPlayer(), which favors a graceful in-app quit over an
+    ' OS-level close/kill for a GPU-device-holding process like Unity) and
+    ' disposing each one.
+    Public Function FindProcessesByExePath(exePath As String) As Process()
+        Dim name As String = System.IO.Path.GetFileNameWithoutExtension(exePath)
+        Return Process.GetProcessesByName(name)
+    End Function
 
     ' Repeatedly attempts a TCP connection to host:port until one succeeds or
     ' connectRetries is exhausted, then returns the open connection. Used to

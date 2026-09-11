@@ -9,7 +9,7 @@ Imports System.Reflection
 '
 ' Usage: STE_Test_Solution.exe <TestName> [StartupDelaySeconds] [LogDirectory]
 ' <TestName> is the script's path relative to Test Scripts\, without the
-' .vb extension (e.g. "AVS\Drone_Spawn_Test") - the same string
+' .vb extension (e.g. "AVS\AVS_Detection_Test") - the same string
 ' HomePage.xaml.cs shows in the STE test list. <StartupDelaySeconds>, if
 ' given, overrides Common_Test_Variables.StartupDelaySeconds's default -
 ' HomePage.xaml.cs passes STE's Settings-page value here. <LogDirectory>,

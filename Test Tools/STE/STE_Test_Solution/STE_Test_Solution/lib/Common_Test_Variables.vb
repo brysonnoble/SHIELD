@@ -35,7 +35,7 @@ Public Module Common_Test_Variables
     Public LogRootDirectory As String = Path.Combine(RepoRoot, "Test Tools", "STE", "Logs")
 
     ' Set by Program.vb, before invoking a test script's Main, to that
-    ' script's module name (e.g. "Drone_Spawn_Test") - used to name that
+    ' script's module name (e.g. "AVS_Detection_Test") - used to name that
     ' test's log subfolder under LogRootDirectory.
     Public CurrentTestName As String = ""
 
