@@ -8,9 +8,10 @@ using UnityEngine;
 // instantiates one of the three drone prefabs at the requested world
 // coordinates.
 //
-// Line-based text protocol: each connection sends
-// "SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>\n". See Common_Test_Functions.vb
-// (InstDrone) in the STE test library for the matching VB.NET client.
+// Line-based text protocol: each connection sends either
+// "SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>\n" or "DESPAWN ALL\n". See
+// Common_Test_Functions.vb (InstDrone/DespawnAllDrones) in the STE test
+// library for the matching VB.NET client.
 //
 // Attach this to a GameObject in the scene and assign the three prefab
 // fields in the Inspector.
@@ -30,6 +31,11 @@ public class DroneSpawner : MonoBehaviour
 
     private readonly object queueLock = new object();
     private readonly System.Collections.Generic.Queue<string> pendingCommands = new System.Collections.Generic.Queue<string>();
+
+    // Every drone this spawner has instantiated and not yet destroyed, so
+    // "DESPAWN ALL" can clean them up - TestCaseEnd() sends it so one test
+    // case's spawned drones never bleed into the next one.
+    private readonly System.Collections.Generic.List<GameObject> spawnedDrones = new System.Collections.Generic.List<GameObject>();
 
     private void Start()
     {
@@ -57,10 +63,16 @@ public class DroneSpawner : MonoBehaviour
 
     private void ApplyCommand(string command)
     {
+        if (command == "DESPAWN ALL")
+        {
+            DespawnAll();
+            return;
+        }
+
         string[] parts = command.Split(' ');
         if (parts.Length != 5 || parts[0] != "SPAWN")
         {
-            Debug.LogError($"[DroneSpawner] Unrecognized command '{command}' (expected 'SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>').");
+            Debug.LogError($"[DroneSpawner] Unrecognized command '{command}' (expected 'SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>' or 'DESPAWN ALL').");
             return;
         }
 
@@ -77,7 +89,18 @@ public class DroneSpawner : MonoBehaviour
             return;
         }
 
-        Instantiate(prefab, position, Quaternion.identity);
+        GameObject drone = Instantiate(prefab, position, Quaternion.identity);
+        spawnedDrones.Add(drone);
+    }
+
+    private void DespawnAll()
+    {
+        foreach (GameObject drone in spawnedDrones)
+        {
+            if (drone != null)
+                Destroy(drone);
+        }
+        spawnedDrones.Clear();
     }
 
     private GameObject PrefabForType(string droneType)

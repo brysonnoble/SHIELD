@@ -124,6 +124,10 @@ UserSettings/
 # Memory captures
 [Mm]emoryCaptures/
 
+# Unity Editor auto-recovery (scenes/assets it stashes here after a crash
+# or unexpected shutdown)
+**/[Aa]ssets/_Recovery*
+
 # Standalone player build output for the "SHIELD Virtual Camera" Unity
 # project (Test Tools/SHIELD Virtual Camera/) - regenerate via Build
 # Settings > Build; see README's "Testing with the STE harness". The

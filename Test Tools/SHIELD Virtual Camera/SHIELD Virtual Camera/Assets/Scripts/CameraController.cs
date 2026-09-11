@@ -4,14 +4,17 @@ using System.Net.Sockets;
 using System.Threading;
 using UnityEngine;
 
-// Listens for a camera-reset command from the external STE control system
-// and moves this GameObject back to the world origin. Used by the STE test
-// library's TestCaseBegin()/TestCaseEnd() (Common_Test_Functions.vb) to put
-// the camera in a known position at the start and end of every test case.
-//
-// Line-based text protocol: each connection sends "CAM RESET\n". See
-// Common_Test_Functions.vb (TestCaseBegin/TestCaseEnd) in the STE test
-// library for the matching VB.NET client.
+// Listens for two commands from the external STE control system: a
+// camera-reset that moves this GameObject back to the world origin, and a
+// graceful quit. Line-based text protocol: each connection sends either
+// "CAM RESET\n" or "QUIT\n". See Common_Test_Functions.vb
+// (CloseUnityPlayer) in the STE test library for the matching VB.NET
+// client - it sends QUIT before ever falling back to an OS-level
+// close/kill, since Application.Quit() runs Unity's own shutdown path
+// (releasing its Direct3D/OpenGL device cleanly) instead of forcibly
+// killing a process that still has a live graphics device open, which has
+// been observed to crash the GPU driver (BSOD) rather than just closing
+// the window.
 //
 // Attach this to the scene's Main Camera, alongside CameraStreamer.
 public class CameraController : MonoBehaviour
@@ -53,13 +56,22 @@ public class CameraController : MonoBehaviour
 
     private void ApplyCommand(string command)
     {
-        if (command != "CAM RESET")
+        switch (command)
         {
-            Debug.LogError($"[CameraController] Unrecognized command '{command}' (expected 'CAM RESET').");
-            return;
+            case "CAM RESET":
+                transform.position = Vector3.zero;
+                break;
+            case "QUIT":
+                // Runs Unity's normal shutdown path (OnApplicationQuit
+                // callbacks, releasing the graphics device, etc.) instead
+                // of leaving the caller to close/kill the process from the
+                // outside.
+                Application.Quit();
+                break;
+            default:
+                Debug.LogError($"[CameraController] Unrecognized command '{command}' (expected 'CAM RESET' or 'QUIT').");
+                break;
         }
-
-        transform.position = Vector3.zero;
     }
 
     private void ServerLoop()
