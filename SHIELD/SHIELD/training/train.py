@@ -41,6 +41,8 @@ def main():
         project=PROJECT_DIR,
         name=RUN_NAME,
         workers=2,
+        batch=8,  # pushing the observed batch=2/4/6 trend further; scaling
+        # hasn't been perfectly linear so this may OOM on this 6GB card
     )
 
     best = model.trainer.save_dir / "weights" / "best.pt"
