@@ -14,6 +14,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.UI.ApplicationSettings;
@@ -29,7 +30,6 @@ namespace STE
     public sealed partial class HomePage : Page, INotifyPropertyChanged
     {
         private static readonly string TestScriptsRoot = GetTestScriptsRoot();
-        private static readonly string TestSolutionExePath = GetTestSolutionExePath();
         private const int MaxSubdirectoryDepth = 2;
         private const string ExcludedFileName = "Example_Test.vb";
 
@@ -201,12 +201,6 @@ namespace STE
             if (TestScriptRunning)
                 return;
 
-            if (TestSolutionExePath == null)
-            {
-                Debug.WriteLine("[HomePage] Could not find STE_Test_Solution.exe. Build the STE_Test_Solution project first.");
-                return;
-            }
-
             List<string> selectedTests = TestList.Where(t => t.IsSelected).Select(t => t.Text).ToList();
             if (selectedTests.Count == 0)
                 return;
@@ -214,13 +208,35 @@ namespace STE
             TestScriptRunning = true;
             try
             {
+                // Rebuild first so a Run always reflects the latest edits to
+                // any test script - STE_Test_Solution.vbproj wildcard-includes
+                // every .vb file under Test Scripts\, so a stale build would
+                // otherwise silently run old test-case code.
+                bool buildSucceeded = await BuildTestSolution();
+                if (!TestScriptRunning)
+                    return; // Stop was pressed during the build
+
+                if (!buildSucceeded)
+                {
+                    Debug.WriteLine("[HomePage] Failed to build STE_Test_Solution - see build output above.");
+                    return;
+                }
+
+                string testSolutionExePath = GetTestSolutionExePath();
+                if (testSolutionExePath == null)
+                {
+                    Debug.WriteLine("[HomePage] Could not find STE_Test_Solution.exe after build.");
+                    return;
+                }
+
                 foreach (string testName in selectedTests)
                 {
                     using (var process = new Process())
                     {
-                        process.StartInfo.FileName = TestSolutionExePath;
+                        process.StartInfo.FileName = testSolutionExePath;
                         process.StartInfo.ArgumentList.Add(testName);
                         process.StartInfo.ArgumentList.Add(AppSettings.StartupDelaySeconds.ToString());
+                        process.StartInfo.ArgumentList.Add(AppSettings.LogDirectory);
                         process.StartInfo.UseShellExecute = false;
 
                         _runningProcess = process;
@@ -236,6 +252,29 @@ namespace STE
             {
                 _runningProcess = null;
                 TestScriptRunning = false;
+            }
+        }
+
+        // Runs the same "dotnet build" LaunchablePrograms' "Build Test
+        // Solution" entry does manually (Settings' Launch Programs button),
+        // but automatically and unconditionally on every Run - independent
+        // of whether that entry is checked in Settings, matching how the
+        // Programs list elsewhere only ever gates the manual button.
+        private async Task<bool> BuildTestSolution()
+        {
+            using (var process = new Process())
+            {
+                process.StartInfo.FileName = "dotnet";
+                process.StartInfo.ArgumentList.Add("build");
+                process.StartInfo.ArgumentList.Add(LaunchablePrograms.TestSolutionSolutionPath);
+                process.StartInfo.ArgumentList.Add("-v");
+                process.StartInfo.ArgumentList.Add("minimal");
+                process.StartInfo.UseShellExecute = false;
+
+                _runningProcess = process;
+                process.Start();
+                await process.WaitForExitAsync();
+                return process.ExitCode == 0;
             }
         }
 
@@ -269,14 +308,38 @@ namespace STE
             ProgramsRunning = _launchedProgramProcesses.Count > 0;
         }
 
+        // Closes a launched program, preferring a graceful WM_CLOSE over an
+        // outright Kill. The Unity virtual camera (and anything else with a
+        // GPU device open) needs to run its own shutdown path to release
+        // Direct3D/OpenGL resources cleanly - Kill (TerminateProcess) skips
+        // that, and killing a live graphics process this way has been
+        // observed to crash the GPU driver (BSOD) instead of just closing
+        // the window. Only force-kill if it doesn't exit on its own.
+        private static void CloseProcessGracefully(Process process)
+        {
+            try
+            {
+                if (process.HasExited)
+                    return;
+
+                if (process.CloseMainWindow())
+                    process.WaitForExit(3000);
+
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch { }
+        }
+
         private void StopRunningTest(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             TestScriptRunning = false;
-            try { _runningProcess?.Kill(entireProcessTree: true); } catch { }
+            if (_runningProcess != null)
+                CloseProcessGracefully(_runningProcess);
 
             foreach (Process process in _launchedProgramProcesses)
             {
-                try { process.Kill(entireProcessTree: true); } catch { }
+                CloseProcessGracefully(process);
             }
             _launchedProgramProcesses.Clear();
             ProgramsRunning = false;

@@ -17,6 +17,8 @@ namespace STE
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SHIELD STE");
         private static readonly string StartupDelayPath = Path.Combine(SettingsDirectory, "StartupDelaySeconds.txt");
         private static readonly string SelectedProgramsPath = Path.Combine(SettingsDirectory, "SelectedPrograms.txt");
+        private static readonly string LogDirectoryPath = Path.Combine(SettingsDirectory, "LogDirectory.txt");
+        public static readonly string DefaultLogDirectory = Path.Combine(SettingsDirectory, "Logs");
 
         // Seconds STE_Test_Solution.exe waits, after launching Unity/Python
         // and confirming Unity's TCP listeners are up, before a test's first
@@ -42,6 +44,32 @@ namespace STE
             {
                 Directory.CreateDirectory(SettingsDirectory);
                 File.WriteAllText(StartupDelayPath, value.ToString());
+            }
+        }
+
+        // Root folder under which test logs are saved - passed to
+        // STE_Test_Solution.exe (see HomePage.xaml.cs), which writes each
+        // test's log under <LogDirectory>\<TestName>\<run timestamp>\.
+        public static string LogDirectory
+        {
+            get
+            {
+                try
+                {
+                    if (File.Exists(LogDirectoryPath))
+                    {
+                        string value = File.ReadAllText(LogDirectoryPath).Trim();
+                        if (value.Length > 0)
+                            return value;
+                    }
+                }
+                catch (IOException) { }
+                return DefaultLogDirectory;
+            }
+            set
+            {
+                Directory.CreateDirectory(SettingsDirectory);
+                File.WriteAllText(LogDirectoryPath, value);
             }
         }
 

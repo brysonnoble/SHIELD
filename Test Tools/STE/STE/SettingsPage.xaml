@@ -19,6 +19,11 @@
         </StackPanel>
 
         <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Left">
+            <TextBlock Text="Path where test logs are saved"/>
+            <TextBox x:Name="LogDirectoryTextBox" Width="300" TextChanged="LogDirectoryTextBox_TextChanged"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Vertical" Spacing="4" HorizontalAlignment="Left">
             <TextBlock Text="Programs started by the Launch Programs button"/>
             <ListBox ItemsSource="{Binding Programs}">
                 <ListBox.ItemTemplate>

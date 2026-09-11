@@ -42,7 +42,22 @@ namespace STE
 
     public static class LaunchablePrograms
     {
+        // STE_Test_Solution.vbproj wildcard-includes every script under
+        // Test Scripts\, so editing or adding one requires rebuilding this
+        // .sln before it takes effect. Shared by the "Build Test Solution"
+        // entry below (manual, via Settings' Launch Programs button) and
+        // HomePage.RunSelectedTests() (automatic, before every Run).
+        public static readonly string TestSolutionSolutionPath = GetTestSolutionSolutionPath();
+
         public static readonly IReadOnlyList<LaunchableProgram> All = BuildList();
+
+        private static string GetTestSolutionSolutionPath([CallerFilePath] string sourceFilePath = "")
+        {
+            // sourceFilePath = ...\SHIELD\Test Tools\STE\STE\LaunchablePrograms.cs
+            string projectDirectory = Path.GetDirectoryName(sourceFilePath);
+            string steToolsDirectory = Path.GetFullPath(Path.Combine(projectDirectory, ".."));
+            return Path.Combine(steToolsDirectory, "STE_Test_Solution", "STE_Test_Solution.sln");
+        }
 
         private static IReadOnlyList<LaunchableProgram> BuildList([CallerFilePath] string sourceFilePath = "")
         {
@@ -65,6 +80,14 @@ namespace STE
                     fileName: Path.Combine(shieldAppDirectory, ".venv", "Scripts", "python.exe"),
                     arguments: new[] { "__main__.py", "0", "--source", "unity" },
                     workingDirectory: shieldAppDirectory),
+
+                // Manual equivalent of the automatic rebuild HomePage.
+                // RunSelectedTests() does before every Run - lets a test
+                // script's compile errors be checked without starting a run.
+                new LaunchableProgram(
+                    name: "Build Test Solution",
+                    fileName: "dotnet",
+                    arguments: new[] { "build", TestSolutionSolutionPath, "-v", "minimal" }),
             };
         }
     }

@@ -19,11 +19,25 @@ Public Module Common_Test_Variables
     Public ReadOnly UNITY_PLAYER_PATH As String = Path.Combine(
         RepoRoot, "Test Tools", "SHIELD Virtual Camera", "SHIELD Virtual Camera.exe")
 
-    ' Unity scene TCP command listeners. Must match SceneSelector.cs's and
-    ' DroneSpawner.cs's "port" fields in the "SHIELD Virtual Camera" project.
+    ' Unity scene TCP command listeners. Must match SceneSelector.cs's,
+    ' DroneSpawner.cs's, and CameraController.cs's "port" fields in the
+    ' "SHIELD Virtual Camera" project.
     Public Const UNITY_HOST As String = "127.0.0.1"
     Public Const UNITY_ENV_PORT As Integer = 5556
     Public Const UNITY_SPAWN_PORT As Integer = 5557
+    Public Const UNITY_CAMERA_PORT As Integer = 5558
+
+    ' Root folder under which each test's logs are written - one subfolder
+    ' per test name, then one subfolder per run (named by the run's start
+    ' time). Set from the command line by Program.vb (STE's Settings page
+    ' controls this - see AppSettings.LogDirectory); this default is only
+    ' used when STE_Test_Solution.exe is run standalone.
+    Public LogRootDirectory As String = Path.Combine(RepoRoot, "Test Tools", "STE", "Logs")
+
+    ' Set by Program.vb, before invoking a test script's Main, to that
+    ' script's module name (e.g. "Drone_Spawn_Test") - used to name that
+    ' test's log subfolder under LogRootDirectory.
+    Public CurrentTestName As String = ""
 
     ' Seconds BeginTest() waits, after Unity's TCP listeners are confirmed up,
     ' before test cases start - gives everything else (Python's model load,

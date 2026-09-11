@@ -7,12 +7,14 @@ Imports System.Reflection
 ' dispatches to the one named on the command line instead of relying on
 ' the project's StartupObject to pick a single, fixed script.
 '
-' Usage: STE_Test_Solution.exe <TestName> [StartupDelaySeconds]
+' Usage: STE_Test_Solution.exe <TestName> [StartupDelaySeconds] [LogDirectory]
 ' <TestName> is the script's path relative to Test Scripts\, without the
 ' .vb extension (e.g. "AVS\Drone_Spawn_Test") - the same string
 ' HomePage.xaml.cs shows in the STE test list. <StartupDelaySeconds>, if
 ' given, overrides Common_Test_Variables.StartupDelaySeconds's default -
-' HomePage.xaml.cs passes STE's Settings-page value here.
+' HomePage.xaml.cs passes STE's Settings-page value here. <LogDirectory>,
+' if given, overrides Common_Test_Variables.LogRootDirectory's default the
+' same way (see AppSettings.LogDirectory).
 Module Program
     Sub Main(args As String())
         If args.Length < 1 Then
@@ -30,6 +32,12 @@ Module Program
                 Common_Test_Variables.StartupDelaySeconds = delaySeconds
             End If
         End If
+
+        If args.Length >= 3 AndAlso Not String.IsNullOrWhiteSpace(args(2)) Then
+            Common_Test_Variables.LogRootDirectory = args(2)
+        End If
+
+        Common_Test_Variables.CurrentTestName = moduleName
 
         Dim testModule As Type = Assembly.GetExecutingAssembly().GetTypes().
             FirstOrDefault(Function(t) t.Name = moduleName)

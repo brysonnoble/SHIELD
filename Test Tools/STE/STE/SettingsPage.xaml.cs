@@ -33,6 +33,7 @@ namespace STE
         {
             InitializeComponent();
             StartupDelayTextBox.Text = AppSettings.StartupDelaySeconds.ToString();
+            LogDirectoryTextBox.Text = AppSettings.LogDirectory;
 
             Programs = new ObservableCollection<ProgramSelection>(
                 LaunchablePrograms.All.Select(p => new ProgramSelection(p.Name)));
@@ -49,6 +50,18 @@ namespace STE
             if (int.TryParse(StartupDelayTextBox.Text, out int value) && value >= 0)
             {
                 AppSettings.StartupDelaySeconds = value;
+            }
+        }
+
+        private void LogDirectoryTextBox_TextChanged(object sender, Microsoft.UI.Xaml.Controls.TextChangedEventArgs e)
+        {
+            if (!_loaded)
+                return;
+
+            string value = LogDirectoryTextBox.Text.Trim();
+            if (value.Length > 0)
+            {
+                AppSettings.LogDirectory = value;
             }
         }
 

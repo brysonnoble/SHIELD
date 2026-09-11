@@ -1,11 +1,22 @@
 ﻿Imports System.Globalization
+Imports System.IO
 Imports System.Threading
 
 Public Module Common_Test_Functions
     Private unityProcess As Process
     Private pythonProcess As Process
+    Private logWriter As StreamWriter
+    Private testCaseNumber As Integer
 
     Public Sub BeginTest()
+        Dim runFolder As String = Path.Combine(
+            LogRootDirectory, CurrentTestName, DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture))
+        Directory.CreateDirectory(runFolder)
+        logWriter = New StreamWriter(Path.Combine(runFolder, CurrentTestName & ".log"))
+        logWriter.AutoFlush = True
+        testCaseNumber = 0
+        WriteLog($"=== BeginTest: {CurrentTestName} ===")
+
         unityProcess = RunProcess(UNITY_PLAYER_PATH)
 
         ' Matches README.md's "Running against the Unity virtual camera":
@@ -32,6 +43,44 @@ Public Module Common_Test_Functions
         CloseProcess(unityProcess)
         pythonProcess = Nothing
         unityProcess = Nothing
+
+        WriteLog("=== EndTest ===")
+        logWriter.Dispose()
+        logWriter = Nothing
+    End Sub
+
+    ' Call at the start of every test case (TCxx), before any TraceTo/other
+    ' calls. Resets the Unity Main Camera to the world origin so each test
+    ' case starts from the same known camera position, and marks the test
+    ' case's start in the log.
+    Public Sub TestCaseBegin()
+        testCaseNumber += 1
+        WriteLog($"--- TestCase {testCaseNumber} Begin ---")
+        ResetCamera()
+    End Sub
+
+    ' Call at the end of every test case (TCxx). Resets the camera again so
+    ' the next thing that runs doesn't inherit a leftover camera position,
+    ' and marks the test case's end in the log.
+    Public Sub TestCaseEnd()
+        ResetCamera()
+        WriteLog($"--- TestCase {testCaseNumber} End ---")
+    End Sub
+
+    Private Sub ResetCamera()
+        SendTcpCommand(UNITY_HOST, UNITY_CAMERA_PORT, "CAM RESET")
+    End Sub
+
+    ' Call at the start of a test case, once per requirement it tests, so
+    ' the requirement coverage for that test case is recorded in the log.
+    Public Sub TraceTo(requirementName As String)
+        WriteLog($"Trace: {requirementName}")
+    End Sub
+
+    Private Sub WriteLog(message As String)
+        Dim line As String = $"[{DateTime.Now:HH:mm:ss}] {message}"
+        Console.WriteLine(line)
+        logWriter?.WriteLine(line)
     End Sub
 
     ' Sends a command over TCP to the Unity scene to switch the day/night skybox.

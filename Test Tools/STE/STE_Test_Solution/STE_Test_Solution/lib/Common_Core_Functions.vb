@@ -23,13 +23,25 @@ Public Module Common_Core_Functions
     ' Closes a process previously started by RunProcess, along with any
     ' processes it spawned (e.g. Unity's crash handler, Python's own child
     ' processes). Safe to call on a process that's already exited or Nothing.
+    '
+    ' Tries a graceful WM_CLOSE first. Unity (and anything else with a GPU
+    ' device open) needs to run its own shutdown path to release Direct3D/
+    ' OpenGL resources cleanly - an outright Kill (TerminateProcess) skips
+    ' that, and killing a live graphics process this way has been observed to
+    ' crash the GPU driver (BSOD) instead of just closing the window. Only
+    ' force-kill if it doesn't exit on its own.
     Public Sub CloseProcess(process As Process)
         If process Is Nothing OrElse process.HasExited Then
             Return
         End If
         Try
-            process.Kill(entireProcessTree:=True)
-            process.WaitForExit(5000)
+            If process.CloseMainWindow() Then
+                process.WaitForExit(3000)
+            End If
+            If Not process.HasExited Then
+                process.Kill(entireProcessTree:=True)
+                process.WaitForExit(5000)
+            End If
         Catch
         End Try
     End Sub
