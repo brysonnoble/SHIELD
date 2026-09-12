@@ -371,4 +371,10 @@ Public Module Common_Test_Functions
                                                droneType.ToString(), x, y, z)
         SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, command)
     End Sub
+
+    ' Sends a command over TCP to the Unity scene to destroy every drone
+    ' InstDrone() has spawned so far (DroneSpawner.cs's DespawnAll()).
+    Public Sub DespawnAllDrones()
+        SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, "DESPAWN ALL")
+    End Sub
 End Module

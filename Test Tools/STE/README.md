@@ -36,13 +36,16 @@ camera stream):
 | `CameraController` (`Assets/Scripts/CameraController.cs`) | `5558` | `QUIT` | Calls `Application.Quit()`, running Unity's own shutdown path instead of being closed/killed from the outside. |
 
 `SceneSelector` and `DroneSpawner`'s `SPAWN` command are driven from the STE
-test library's `EditVirtualEnvironment` and `InstDrone` functions
+test library's `EditVirtualEnvironment` and `InstDrone` functions, and
+`DroneSpawner`'s `DESPAWN ALL` from `DespawnAllDrones()`
 (`Common_Test_Functions.vb`); see `Test Scripts/AVS/AVS_Detection_Test.vb`
-for an example. `DESPAWN ALL` and `CAM RESET` exist as scene commands but
-aren't invoked automatically by the test library anymore now that
-`TestCaseBegin()` closes and relaunches Unity fresh for every test case
-(see `STE_Test_Solution\README.md`) rather than resetting/despawning
-between test cases in one long-lived Unity session. `QUIT`, on the other
+for an example. None of these three are invoked automatically by the test
+library anymore now that `TestCaseBegin()` closes and relaunches Unity
+fresh for every test case (see `STE_Test_Solution\README.md`) rather than
+resetting/despawning between test cases in one long-lived Unity session -
+a test case only needs to call `DespawnAllDrones()` itself if it wants its
+drones gone before the case ends. `CAM RESET` has no library wrapper at
+all yet. `QUIT`, on the other
 hand, *is* used automatically, every time the test library closes Unity
 (`CloseUnityPlayer()` in `Common_Test_Functions.vb`) - and it's the *only*
 way Unity ever gets closed: an OS-level close/kill against a process with a

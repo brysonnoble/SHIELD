@@ -33,8 +33,11 @@ public class DroneSpawner : MonoBehaviour
     private readonly System.Collections.Generic.Queue<string> pendingCommands = new System.Collections.Generic.Queue<string>();
 
     // Every drone this spawner has instantiated and not yet destroyed, so
-    // "DESPAWN ALL" can clean them up - TestCaseEnd() sends it so one test
-    // case's spawned drones never bleed into the next one.
+    // "DESPAWN ALL" can clean them up - Common_Test_Functions.vb's
+    // DespawnAllDrones() sends it. Not called automatically by
+    // TestCaseEnd(), which instead relaunches the whole Unity player
+    // between test cases; a test case that spawns drones and wants them
+    // gone before the case ends must call DespawnAllDrones() itself.
     private readonly System.Collections.Generic.List<GameObject> spawnedDrones = new System.Collections.Generic.List<GameObject>();
 
     private void Start()
