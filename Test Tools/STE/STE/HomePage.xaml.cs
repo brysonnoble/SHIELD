@@ -118,6 +118,7 @@ namespace STE
                 string displayName = Path.ChangeExtension(relativePath, null);
                 var testScript = new BoolStringClass { IsSelected = false, Text = displayName };
                 testScript.PropertyChanged += TestScript_PropertyChanged;
+                RefreshLastRunInfo(testScript);
                 TestList.Add(testScript);
             }
 
@@ -184,6 +185,64 @@ namespace STE
             }
         }
 
+        // Mirrors Program.vb's moduleName derivation: a test's log folder
+        // (see Common_Test_Functions.BeginTest) is named after the script's
+        // module name alone, not its full path relative to Test Scripts\ -
+        // e.g. "AVS\AVS_Detection_Test" logs under "AVS_Detection_Test\".
+        private static string GetModuleName(string testDisplayName)
+        {
+            return testDisplayName.Split('\\', '/').Last();
+        }
+
+        // Reads the most recent run's log for one test (if any) and updates
+        // its LastDuration/LastResult for the ListBox's columns. Called once
+        // per test at startup and again for each test right after it finishes
+        // running, so the columns always reflect the last completed run.
+        private static void RefreshLastRunInfo(BoolStringClass test)
+        {
+            string lastDuration = "";
+            string lastResult = "";
+            try
+            {
+                string testLogDirectory = Path.Combine(AppSettings.LogDirectory, GetModuleName(test.Text));
+                string latestRunDirectory = Directory.Exists(testLogDirectory)
+                    ? Directory.EnumerateDirectories(testLogDirectory).OrderByDescending(d => d).FirstOrDefault()
+                    : null;
+
+                if (latestRunDirectory != null)
+                {
+                    string logPath = Path.Combine(latestRunDirectory, GetModuleName(test.Text) + ".log");
+                    if (File.Exists(logPath))
+                    {
+                        foreach (string line in File.ReadLines(logPath))
+                        {
+                            // "=== EndTest: <name> - PASS (Pass: 1, Fail: 0, Abort: 0, Total: 1) ==="
+                            if (line.Contains("=== EndTest:"))
+                            {
+                                string[] parts = line.Split(" - ", 2, StringSplitOptions.None);
+                                if (parts.Length == 2)
+                                {
+                                    string resultPart = parts[1].Trim();
+                                    int spaceIndex = resultPart.IndexOf(' ');
+                                    lastResult = spaceIndex >= 0 ? resultPart.Substring(0, spaceIndex) : resultPart;
+                                }
+                            }
+                            // "Duration: hh:mm:ss"
+                            else if (line.Contains("Duration: "))
+                            {
+                                int index = line.IndexOf("Duration: ", StringComparison.Ordinal);
+                                lastDuration = line.Substring(index + "Duration: ".Length).Trim();
+                            }
+                        }
+                    }
+                }
+            }
+            catch (IOException) { }
+
+            test.LastDuration = lastDuration;
+            test.LastResult = lastResult;
+        }
+
         private void OpenSettingsPage(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
             this.Frame.Navigate(typeof(SettingsPage));
@@ -243,6 +302,10 @@ namespace STE
                         process.Start();
                         await process.WaitForExitAsync();
                     }
+
+                    BoolStringClass finishedTest = TestList.FirstOrDefault(t => t.Text == testName);
+                    if (finishedTest != null)
+                        RefreshLastRunInfo(finishedTest);
 
                     if (!TestScriptRunning)
                         break; // Stop was pressed
@@ -361,6 +424,38 @@ namespace STE
                     {
                         _isSelected = value;
                         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+                    }
+                }
+            }
+
+            // How long the last completed run of this test took (hh:mm:ss,
+            // from Common_Test_Functions.EndTest's log line), and whether
+            // that run's overall result was PASS, FAIL, or ABORT. Both are
+            // "" until a run has actually completed with a log to read.
+            private string _lastDuration = "";
+            public string LastDuration
+            {
+                get => _lastDuration;
+                set
+                {
+                    if (_lastDuration != value)
+                    {
+                        _lastDuration = value;
+                        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastDuration)));
+                    }
+                }
+            }
+
+            private string _lastResult = "";
+            public string LastResult
+            {
+                get => _lastResult;
+                set
+                {
+                    if (_lastResult != value)
+                    {
+                        _lastResult = value;
+                        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastResult)));
                     }
                 }
             }

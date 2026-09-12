@@ -17,10 +17,36 @@
             <Button Width="100" Height="40" Click="OpenSettingsPage">Settings</Button>
         </StackPanel>
 
-        <ListBox ItemsSource="{Binding TestList}">
+        <Grid Padding="12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="100"/>
+                <ColumnDefinition Width="80"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Name" FontWeight="Bold"/>
+            <TextBlock Grid.Column="1" Text="Duration" FontWeight="Bold" HorizontalAlignment="Center"/>
+            <TextBlock Grid.Column="2" Text="Result" FontWeight="Bold" HorizontalAlignment="Center"/>
+        </Grid>
+
+        <ListBox ItemsSource="{Binding TestList}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Text}"/>
+                    <Grid Padding="12,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="80"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Text}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding LastDuration}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        <TextBlock Grid.Column="2" Text="{Binding LastResult}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
