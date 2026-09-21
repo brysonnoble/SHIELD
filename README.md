@@ -10,7 +10,7 @@ locked target under either full autonomy or human-approved engagement.
 This repo is the software component, written and maintained by Bryson
 Noble (Avionics Lead, Software Engineering) as part of the larger Team
 S.H.I.E.L.D. capstone — a joint Aerospace Engineering (AEE) and Software
-Engineering (SWE) team of 11 students, advised by Firat Irmak, PhD
+Engineering (SWE) team of 10 students, advised by Firat Irmak, PhD
 (Aerospace Engineering Department, Florida Tech). See
 [**Team & project links**](#team--project-links) below for the full
 team roster and project site.
@@ -295,6 +295,6 @@ Department, Florida Institute of Technology
 
 **Software maintainer:** Bryson Noble — Avionics Lead, Software Engineering
 
-Team S.H.I.E.L.D. is an 11-person AEE/SWE capstone team; the full
+Team S.H.I.E.L.D. is an 10-person AEE/SWE capstone team; the full
 roster, contact emails, and milestone deliverables are on the
 [project site](https://brysonnoble.github.io/SHIELD/).
