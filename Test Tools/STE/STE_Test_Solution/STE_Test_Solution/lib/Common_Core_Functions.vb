@@ -34,10 +34,16 @@ Public Module Common_Core_Functions
     ' for a long time before a test's WaitForLogMatch-style check ever sees
     ' it, since a pipe (unlike a real console) doesn't get line-buffered by
     ' default.
+    '
+    ' redirectStandardInput also gives the caller a stdin pipe
+    ' (Process.StandardInput) - e.g. to ask the process to quit on its own
+    ' (see Common_Test_Functions.vb's ClosePythonPipeline()) rather than
+    ' killing it.
     Public Function RunProcessCapturingOutput(filePath As String,
                     Optional arguments As String = "",
                     Optional workingDirectory As String = "",
-                    Optional onLine As Action(Of String) = Nothing) _
+                    Optional onLine As Action(Of String) = Nothing,
+                    Optional redirectStandardInput As Boolean = False) _
                     As (Process As Process, Output As ConcurrentQueue(Of String))
         Dim process As New Process()
         process.StartInfo.FileName = filePath
@@ -45,6 +51,7 @@ Public Module Common_Core_Functions
         process.StartInfo.UseShellExecute = False
         process.StartInfo.RedirectStandardOutput = True
         process.StartInfo.RedirectStandardError = True
+        process.StartInfo.RedirectStandardInput = redirectStandardInput
         process.StartInfo.CreateNoWindow = True
         If workingDirectory <> "" Then
             process.StartInfo.WorkingDirectory = workingDirectory

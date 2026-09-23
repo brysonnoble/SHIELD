@@ -1,5 +1,6 @@
 import argparse
 import sys
+import threading
 import time
 
 import config
@@ -33,7 +34,34 @@ def parse_args():
         "--profile", action="store_true",
         help="Print average per-stage timing (read/detect/render/pump) every 30 frames",
     )
+    parser.add_argument(
+        "--quit-on-stdin", action="store_true",
+        help="Shut down cleanly when a 'QUIT' line or EOF arrives on stdin "
+             "(used by the STE test harness instead of killing the process)",
+    )
     return parser.parse_args()
+
+
+def _start_stdin_quit_watcher():
+    """Returns an Event that gets set once a 'QUIT' line or EOF arrives on
+    stdin. Lets the STE test harness ask this process to exit through its
+    normal shutdown path (window destroyed, source released, CUDA context
+    torn down by a normal interpreter exit) instead of TerminateProcess -
+    killing a process with a live CUDA context/GPU window has crashed the
+    GPU driver (BSOD) on this project's hardware.
+    """
+    quit_requested = threading.Event()
+
+    def watch():
+        try:
+            for line in sys.stdin:
+                if line.strip().upper() == "QUIT":
+                    break
+        finally:
+            quit_requested.set()
+
+    threading.Thread(target=watch, name="stdin-quit-watcher", daemon=True).start()
+    return quit_requested
 
 
 def build_source(args):
@@ -54,31 +82,36 @@ def build_source(args):
     raise ValueError(f"Unknown source {args.source}")
 
 
-def _pump_tick(window):
+def _pump_tick(window, quit_requested=None):
     """Pump the Tk event loop once. Used as the on_wait callback for any
     blocking wait (initial connect, reconnect backoff) so the GCS window
     keeps redrawing - and stays closable - instead of appearing frozen for
-    the whole wait. Returns True if the window was closed, so the wait
-    loop calling this can bail out early instead of finishing its delay.
+    the whole wait. Returns True if the window was closed (or a
+    --quit-on-stdin quit was requested), so the wait loop calling this can
+    bail out early instead of finishing its delay.
     """
+    if quit_requested is not None and quit_requested.is_set():
+        return True
     if window is None:
         return False
     window.pump()
     return window.closed
 
 
-def _wait_pumping(window, seconds):
+def _wait_pumping(window, seconds, quit_requested=None):
     """Sleep for `seconds`, pumping `window` throughout instead of
-    blocking it. Returns True if the window was closed during the wait."""
+    blocking it. Returns True if the window was closed (or a quit was
+    requested) during the wait."""
     end = time.monotonic() + seconds
     while time.monotonic() < end:
-        if _pump_tick(window):
+        if _pump_tick(window, quit_requested):
             return True
         time.sleep(0.05)
     return False
 
 
 def run_emulation(args):
+    quit_requested = _start_stdin_quit_watcher() if args.quit_on_stdin else None
     source = build_source(args)
     detector = SHIELDDetector()
     window = SHIELDGCSWindow() if not args.no_display else None
@@ -91,7 +124,7 @@ def run_emulation(args):
             window.set_link_status("Connecting...", "warn")
             window.pump()
         try:
-            source.open(on_wait=lambda: _pump_tick(window))
+            source.open(on_wait=lambda: _pump_tick(window, quit_requested))
         except (ConnectionError, RuntimeError) as exc:
             # Was previously unguarded: on total failure to connect (e.g.
             # no stream source available at all) this raised straight out
@@ -101,7 +134,7 @@ def run_emulation(args):
             print(f"[SHIELD] {exc}")
             if window is not None:
                 window.set_link_status("No video source - see console", "bad")
-                _wait_pumping(window, 5.0)
+                _wait_pumping(window, 5.0, quit_requested)
             return
         if window is not None:
             window.set_link_status("Link stable", "ok")
@@ -109,6 +142,9 @@ def run_emulation(args):
 
         while True:
             if window is not None and window.closed:
+                break
+            if quit_requested is not None and quit_requested.is_set():
+                print("[SHIELD] Quit requested on stdin, shutting down.")
                 break
 
             frame_start = time.monotonic()
@@ -141,13 +177,13 @@ def run_emulation(args):
                     print("[SHIELD] Lost connection to Unity, reconnecting...")
                     if window is not None:
                         window.set_link_status("Video feed lost - reconnecting...", "bad")
-                        if _pump_tick(window):
+                        if _pump_tick(window, quit_requested):
                             break
                     source.release()
-                    if _wait_pumping(window, 1.0):
+                    if _wait_pumping(window, 1.0, quit_requested):
                         break
                     try:
-                        source.open(on_wait=lambda: _pump_tick(window))
+                        source.open(on_wait=lambda: _pump_tick(window, quit_requested))
                     except ConnectionError as exc:
                         print(f"[SHIELD] Reconnect failed: {exc}")
                         if window is not None:

@@ -218,11 +218,14 @@ Public Module Common_Test_Functions
         ' separate "_python_output.log") - not the main log, which would
         ' otherwise be buried in a per-frame "target id=..." /
         ' "[SHIELD][profile]" line for every single frame processed.
+        ' "--quit-on-stdin" (with stdin redirected) is what lets
+        ' ClosePythonPipeline() shut it down without killing it.
         Dim pythonRun = RunProcessCapturingOutput(
             PYTHON_PATH,
-            $"-u __main__.py {CInt(TestPlatform.Emulation)} --source unity --profile",
+            $"-u __main__.py {CInt(TestPlatform.Emulation)} --source unity --profile --quit-on-stdin",
             SHIELD_DIRECTORY,
-            Sub(line) WritePythonLog(line))
+            Sub(line) WritePythonLog(line),
+            redirectStandardInput:=True)
         pythonProcess = pythonRun.Process
         pythonOutput = pythonRun.Output
 
@@ -257,10 +260,42 @@ Public Module Common_Test_Functions
     ' call even if neither is running (e.g. TestCaseBegin()'s own
     ' LaunchPipeline() calls this first, before either exists yet).
     Private Sub ClosePipeline()
-        CloseProcess(pythonProcess)
+        ClosePythonPipeline(pythonProcess)
         CloseUnityPlayer(unityProcess)
         pythonProcess = Nothing
         unityProcess = Nothing
+    End Sub
+
+    ' Closes the Python detection pipeline ONLY by asking it to quit over
+    ' stdin (__main__.py's --quit-on-stdin: a "QUIT" line, then EOF) - never
+    ' via CloseProcess(). The pipeline holds a live CUDA context (YOLO on the
+    ' GPU) plus a Tk preview window, so killing it is the same GPU driver
+    ' crash (BSOD) risk as killing Unity (see CloseUnityPlayer()). And
+    ' CloseProcess()'s CloseMainWindow() never even gets a chance here:
+    ' PYTHON_PATH is the venv's python.exe, a windowless launcher that runs
+    ' the real interpreter as a child, so CloseMainWindow() returns False
+    ' and CloseProcess() goes straight to Kill(entireProcessTree:=True).
+    ' Same policy as CloseUnityPlayer() if it doesn't exit in time: leave it
+    ' running and mark the test case ABORTed rather than escalate to a kill.
+    Private Sub ClosePythonPipeline(process As Process)
+        If process Is Nothing OrElse process.HasExited Then
+            Return
+        End If
+        Try
+            process.StandardInput.WriteLine("QUIT")
+            process.StandardInput.Close()
+        Catch ex As Exception
+            WriteLog($"WARNING: Could not send QUIT to the Python pipeline: {ex.Message}")
+        End Try
+        If Not process.WaitForExit(15000) Then
+            WriteLog(
+                "ABORT: The Python pipeline did not exit within 15s of being " &
+                "asked to QUIT. Leaving it running rather than force-killing " &
+                "it (a GPU/CUDA process - a past cause of a GPU driver " &
+                "crash/BSOD on this hardware) - close its window manually " &
+                "before the next run.")
+            MarkCurrentTestCaseAborted()
+        End If
     End Sub
 
     ' Closes the Unity virtual camera player ONLY via its own "QUIT" scene
