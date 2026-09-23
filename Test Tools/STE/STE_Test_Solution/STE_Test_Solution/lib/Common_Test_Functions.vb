@@ -50,6 +50,15 @@ Public Module Common_Test_Functions
     ' behind the other.
     Private ReadOnly pythonLogLock As New Object()
 
+    ' Guards launching/closing Unity+Python (LaunchPipeline()/
+    ' ClosePipeline()) against StopTest(), which runs on Program.vb's stdin
+    ' listener thread while the test script is still running on the main
+    ' thread - so a Stop can't race a test case into launching a fresh
+    ' Unity/Python after StopTest() has already closed the old ones.
+    ' stopRequested is only read/written under this lock.
+    Private ReadOnly pipelineLock As New Object()
+    Private stopRequested As Boolean
+
     Public Sub BeginTest()
         testStartTime = DateTime.Now
         Dim runFolder As String = Path.Combine(
@@ -99,6 +108,43 @@ Public Module Common_Test_Functions
         Else
             overall = "PASS"
         End If
+        WriteSummaryAndCloseLogs(overall)
+    End Sub
+
+    ' Called (on Program.vb's stdin listener thread) when STE's Stop button
+    ' sends "STOP". Closes Unity/Python the same graceful, never-kill way a
+    ' normal test case end does (ClosePipeline()) - STE used to
+    ' Kill(entireProcessTree) this whole process instead, which took Unity
+    ' and the CUDA Python pipeline down with it, the same GPU driver crash
+    ' (BSOD) risk CloseUnityPlayer()/ClosePythonPipeline() exist to avoid -
+    ' then writes an EndTest summary marked STOPPED (which STE's "last
+    ' result" column reads) and exits. Never returns.
+    '
+    ' Holds pipelineLock, then logLock, until the process exits, so the
+    ' main thread's test script can neither launch a new Unity/Python nor
+    ' append to the log (e.g. ABORT lines from its scene commands failing
+    ' once Unity is gone) after the stop. Lock order is safe: the main
+    ' thread only ever takes logLock inside WriteLog(), which takes no other
+    ' lock, so it can't be holding logLock while waiting on pipelineLock.
+    Public Sub StopTest()
+        SyncLock pipelineLock
+            stopRequested = True
+            SyncLock logLock
+                WriteLog("=== Stop requested from STE - closing Unity/Python and ending the run ===")
+                ClosePipeline()
+                WriteSummaryAndCloseLogs("STOPPED")
+                Environment.Exit(2)
+            End SyncLock
+        End SyncLock
+    End Sub
+
+    ' EndTest()/StopTest()'s shared summary: the "=== EndTest: ... ===" line
+    ' (STE's HomePage.RefreshLastRunInfo() reads the result from it), one
+    ' line per finished test case, and the duration. Then closes both logs.
+    Private Sub WriteSummaryAndCloseLogs(overall As String)
+        Dim passCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Pass).Count()
+        Dim failCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Fail).Count()
+        Dim abortCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Abort).Count()
         WriteLog($"=== EndTest: {CurrentTestName} - {overall} (Pass: {passCount}, Fail: {failCount}, Abort: {abortCount}, Total: {testCaseResults.Count}) ===")
         For Each result In testCaseResults
             Dim traces As String = If(result.Traces.Count > 0, " [" & String.Join(", ", result.Traces) & "]", "")
@@ -199,36 +245,15 @@ Public Module Common_Test_Functions
     ' RunTestCase()'s catch-all mark the test case ABORTed) if Python's
     ' video connection to Unity is never confirmed within 30s.
     Private Sub LaunchPipeline()
-        ClosePipeline()
-
-        ' The raw pipeline log spans the whole script (opened once by
-        ' BeginTest()), but the process it's capturing gets relaunched for
-        ' every test case - mark where each one's output starts so the file
-        ' doesn't read as one unbroken run.
-        WritePythonLog($"=== TestCase {testCaseNumber} pipeline start ===")
-
-        CloseExistingUnityPlayers()
-        unityProcess = RunProcess(UNITY_PLAYER_PATH)
-
-        ' Matches README.md's "Running against the Unity virtual camera":
-        '   cd "SHIELD\SHIELD"
-        '   .venv\Scripts\python __main__.py 0 --source unity
-        ' "-u" disables Python's stdout buffering and "--profile" turns on
-        ' its periodic per-stage timing line - both needed for the capture
-        ' below to actually see detection/timing output promptly instead of
-        ' it sitting in a buffer (see RunProcessCapturingOutput's remarks).
-        ' Every line is captured for a test case to assert on
-        ' (Common_Test_Checks.vb) and also written to pythonLogWriter (the
-        ' separate "_python_output.log") - not the main log, which would
-        ' otherwise be buried in a per-frame "target id=..." /
-        ' "[SHIELD][profile]" line for every single frame processed.
-        Dim pythonRun = RunProcessCapturingOutput(
-            PYTHON_PATH,
-            $"-u __main__.py {CInt(TestPlatform.Emulation)} --source unity --profile",
-            SHIELD_DIRECTORY,
-            Sub(line) WritePythonLog(line))
-        pythonProcess = pythonRun.Process
-        pythonOutput = pythonRun.Output
+        ' Held until both processes are started and assigned, so StopTest()
+        ' either runs first (and this throws instead of launching) or runs
+        ' after (and sees unityProcess/pythonProcess to close).
+        SyncLock pipelineLock
+            If stopRequested Then
+                Throw New OperationCanceledException("Test run stopped from STE.")
+            End If
+            StartPipelineProcesses()
+        End SyncLock
 
         ' Don't let the test case start until every launched program is
         ' actually up, not just started - Process.Start() returning only
@@ -257,14 +282,86 @@ Public Module Common_Test_Functions
         Thread.Sleep(StartupDelaySeconds * 1000)
     End Sub
 
+    ' LaunchPipeline()'s process-starting half - call with pipelineLock held.
+    Private Sub StartPipelineProcesses()
+        ClosePipeline()
+
+        ' The raw pipeline log spans the whole script (opened once by
+        ' BeginTest()), but the process it's capturing gets relaunched for
+        ' every test case - mark where each one's output starts so the file
+        ' doesn't read as one unbroken run.
+        WritePythonLog($"=== TestCase {testCaseNumber} pipeline start ===")
+
+        CloseExistingUnityPlayers()
+        unityProcess = RunProcess(UNITY_PLAYER_PATH)
+
+        ' Matches README.md's "Running against the Unity virtual camera":
+        '   cd "SHIELD\SHIELD"
+        '   .venv\Scripts\python __main__.py 0 --source unity
+        ' "-u" disables Python's stdout buffering and "--profile" turns on
+        ' its periodic per-stage timing line - both needed for the capture
+        ' below to actually see detection/timing output promptly instead of
+        ' it sitting in a buffer (see RunProcessCapturingOutput's remarks).
+        ' Every line is captured for a test case to assert on
+        ' (Common_Test_Checks.vb) and also written to pythonLogWriter (the
+        ' separate "_python_output.log") - not the main log, which would
+        ' otherwise be buried in a per-frame "target id=..." /
+        ' "[SHIELD][profile]" line for every single frame processed.
+        ' "--quit-on-stdin" (with stdin redirected) is what lets
+        ' ClosePythonPipeline() shut it down without killing it.
+        Dim pythonRun = RunProcessCapturingOutput(
+            PYTHON_PATH,
+            $"-u __main__.py {CInt(TestPlatform.Emulation)} --source unity --profile --quit-on-stdin",
+            SHIELD_DIRECTORY,
+            Sub(line) WritePythonLog(line),
+            redirectStandardInput:=True)
+        pythonProcess = pythonRun.Process
+        pythonOutput = pythonRun.Output
+    End Sub
+
     ' Closes this test case's Unity/Python processes, if running. Safe to
     ' call even if neither is running (e.g. TestCaseBegin()'s own
-    ' LaunchPipeline() calls this first, before either exists yet).
+    ' LaunchPipeline() calls this first, before either exists yet), and
+    ' from either thread (see pipelineLock/StopTest()).
     Private Sub ClosePipeline()
-        CloseProcess(pythonProcess)
-        CloseUnityPlayer(unityProcess)
-        pythonProcess = Nothing
-        unityProcess = Nothing
+        SyncLock pipelineLock
+            ClosePythonPipeline(pythonProcess)
+            CloseUnityPlayer(unityProcess)
+            pythonProcess = Nothing
+            unityProcess = Nothing
+        End SyncLock
+    End Sub
+
+    ' Closes the Python detection pipeline ONLY by asking it to quit over
+    ' stdin (__main__.py's --quit-on-stdin: a "QUIT" line, then EOF) - never
+    ' via CloseProcess(). The pipeline holds a live CUDA context (YOLO on the
+    ' GPU) plus a Tk preview window, so killing it is the same GPU driver
+    ' crash (BSOD) risk as killing Unity (see CloseUnityPlayer()). And
+    ' CloseProcess()'s CloseMainWindow() never even gets a chance here:
+    ' PYTHON_PATH is the venv's python.exe, a windowless launcher that runs
+    ' the real interpreter as a child, so CloseMainWindow() returns False
+    ' and CloseProcess() goes straight to Kill(entireProcessTree:=True).
+    ' Same policy as CloseUnityPlayer() if it doesn't exit in time: leave it
+    ' running and mark the test case ABORTed rather than escalate to a kill.
+    Private Sub ClosePythonPipeline(process As Process)
+        If process Is Nothing OrElse process.HasExited Then
+            Return
+        End If
+        Try
+            process.StandardInput.WriteLine("QUIT")
+            process.StandardInput.Close()
+        Catch ex As Exception
+            WriteLog($"WARNING: Could not send QUIT to the Python pipeline: {ex.Message}")
+        End Try
+        If Not process.WaitForExit(15000) Then
+            WriteLog(
+                "ABORT: The Python pipeline did not exit within 15s of being " &
+                "asked to QUIT. Leaving it running rather than force-killing " &
+                "it (a GPU/CUDA process - a past cause of a GPU driver " &
+                "crash/BSOD on this hardware) - close its window manually " &
+                "before the next run.")
+            MarkCurrentTestCaseAborted()
+        End If
     End Sub
 
     ' Closes the Unity virtual camera player ONLY via its own "QUIT" scene

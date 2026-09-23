@@ -128,7 +128,10 @@ class UnityStreamSource(VideoSource):
                     f"({attempt}/{self.connect_retries})... is Play Mode running "
                     f"with CameraStreamer attached?"
                 )
-                self._wait(self.retry_delay, on_wait)
+                if self._wait(self.retry_delay, on_wait):
+                    raise ConnectionError(
+                        "Connection to Unity virtual camera cancelled (window closed or quit requested)"
+                    )
         raise ConnectionError(
             f"Could not connect to Unity virtual camera at {self.host}:{self.port}: {last_error}"
         )
@@ -137,15 +140,17 @@ class UnityStreamSource(VideoSource):
     def _wait(seconds, on_wait):
         # Chunk the wait so a caller-supplied on_wait callback (e.g. pumping
         # a Tk window) keeps running instead of the whole process blocking
-        # for `seconds` straight.
+        # for `seconds` straight. Returns True if on_wait asked to stop, so
+        # open() gives up instead of running out its remaining retries.
         if on_wait is None:
             time.sleep(seconds)
-            return
+            return False
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             if on_wait():
-                return
+                return True
             time.sleep(0.05)
+        return False
 
     def read(self):
         if self._sock is None:

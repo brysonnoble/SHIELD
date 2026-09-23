@@ -1,5 +1,6 @@
 Imports System.Linq
 Imports System.Reflection
+Imports System.Threading
 
 ' Real entry point for the compiled test runner. Every script under
 ' Test Scripts\ (as discovered by STE's HomePage.xaml.cs) defines its own
@@ -56,11 +57,35 @@ Module Program
         End If
 
         ' While this is running, this process (and the Unity/Python child
-        ' processes BeginTest() launched) stay alive naturally - HomePage.
-        ' xaml.cs's Stop button can kill this whole tree
-        ' (Process.Kill(entireProcessTree:=True)) at any point during the
-        ' run. EndTest() closes Unity/Python itself once the script
-        ' completes normally, so this process then exits on its own too.
+        ' processes BeginTest() launched) stay alive naturally. EndTest()
+        ' closes Unity/Python itself once the script completes normally, so
+        ' this process then exits on its own too. HomePage.xaml.cs's Stop
+        ' button ends a run early by writing "STOP" to this process's stdin
+        ' (see StartStopListener()) rather than killing it.
+        StartStopListener()
         entryPoint.Invoke(Nothing, Nothing)
+    End Sub
+
+    ' Watches stdin on a background thread for a "STOP" line from STE's Stop
+    ' button, and hands it to Common_Test_Functions.StopTest(), which closes
+    ' Unity/Python gracefully and exits. Stdin closing (EOF) is ignored
+    ' rather than treated as a stop, so running this from a console, or with
+    ' no stdin at all, doesn't end the run. A leading UTF-8 byte order mark
+    ' is stripped - some writers (e.g. .NET Framework's Process.StandardInput)
+    ' send one ahead of the first line, and Trim() doesn't remove it.
+    Private Sub StartStopListener()
+        Dim listener As New Thread(
+            Sub()
+                Dim line As String = Console.In.ReadLine()
+                While line IsNot Nothing
+                    If line.Replace(ChrW(&HFEFF), "").Trim().Equals("STOP", StringComparison.OrdinalIgnoreCase) Then
+                        Common_Test_Functions.StopTest()
+                    End If
+                    line = Console.In.ReadLine()
+                End While
+            End Sub)
+        listener.IsBackground = True
+        listener.Name = "STE stop listener"
+        listener.Start()
     End Sub
 End Module
