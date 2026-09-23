@@ -113,20 +113,24 @@ Public Module Common_Test_Functions
     End Sub
 
     ' Runs one test case (a TCxx() Sub taking no arguments) as
-    ' TestCaseBegin() / testCase() / TestCaseEnd(). Catches a deliberate
-    ' assertion failure (Common_Test_Checks.Fail(), already marked FAIL) as
-    ' well as any other unhandled exception - including TestCaseBegin()'s
-    ' own pipeline relaunch timing out (marked ABORT instead - see
-    ' TestCaseStatus.Abort) - so one bad test case doesn't stop the rest of
-    ' the script's test cases - or EndTest() and its final summary - from
-    ' running. TCxx() itself should just TraceTo() and assert; call it via
+    ' TestCaseBegin() / testCase() / TestCaseEnd(). A deliberate assertion
+    ' failure (Common_Test_Checks.Fail()) does NOT stop testCase() - Fail()
+    ' just logs and marks the test case FAILed, then returns normally, so
+    ' TCxx() keeps running and every remaining check in it still gets made.
+    ' Only an actual unhandled exception here - a real bug, a broken
+    ' scene/network setup, TestCaseBegin()'s own pipeline relaunch timing
+    ' out, etc. - is caught and marked ABORT instead (see
+    ' TestCaseStatus.Abort); that's what actually cuts a test case short and
+    ' moves on to the script's next one, since ABORT means TCxx() itself
+    ' couldn't keep running, not just that one of its checks failed. Either
+    ' way, one bad test case doesn't stop the rest of the script's test
+    ' cases - or EndTest() and its final summary - from running. TCxx()
+    ' itself should just TraceTo() and assert; call it via
     ' RunTestCase(AddressOf TCxx) from Main() instead of TCxx() directly.
     Public Sub RunTestCase(testCase As Action)
         Try
             TestCaseBegin()
             testCase()
-        Catch ex As Common_Test_Checks.TestAssertionFailedException
-            ' Already logged by Fail(); currentTestCaseStatus is already Fail.
         Catch ex As Exception
             WriteLog($"ABORT: Unhandled exception: {ex.Message}")
             MarkCurrentTestCaseAborted()
@@ -376,5 +380,16 @@ Public Module Common_Test_Functions
     ' InstDrone() has spawned so far (DroneSpawner.cs's DespawnAll()).
     Public Sub DespawnAllDrones()
         SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, "DESPAWN ALL")
+    End Sub
+
+    ' Blocks the test case for the given time. InstDrone()/DespawnAllDrones()
+    ' return as soon as the scene command is sent, but the change only
+    ' reaches the detector a few frames later - the command is applied on
+    ' Unity's next Update(), then that frame has to be streamed, decoded and
+    ' run through the model before its detections (or their absence) print.
+    ' Use this to let a scene change take effect before taking a
+    ' Common_Test_Checks.OutputMark() to assert against.
+    Public Sub Wait(seconds As Double)
+        Thread.Sleep(CInt(seconds * 1000))
     End Sub
 End Module

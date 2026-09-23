@@ -8,17 +8,6 @@ Imports System.Threading
 ' that run's separate "_python_output.log", not the main log). Call these
 ' after TraceTo() so a failure lands under the requirement it was checking.
 Public Module Common_Test_Checks
-    ' Thrown by Fail() so a failed assertion stops the test case instead of
-    ' silently continuing, and so STE_Test_Solution.exe exits non-zero
-    ' (an unhandled exception's default exit code) - the log's Output Check
-    ' line (written before the throw) already has the Expected/Actual values.
-    Public Class TestAssertionFailedException
-        Inherits Exception
-        Public Sub New(message As String)
-            MyBase.New(message)
-        End Sub
-    End Class
-
     ' Logs "Output Check <n>: PASS", <n> being a 1-based counter of checks
     ' made so far in the current test case (reset by TestCaseBegin()).
     Public Sub Pass()
@@ -27,26 +16,52 @@ Public Module Common_Test_Checks
     End Sub
 
     ' Logs "Output Check <n>: **FAIL** Expected Value: <expectedValue>,
-    ' Actual Value: <actualValue>", marks the current test case failed (for
-    ' TestCaseEnd()/EndTest()'s summary), and throws so the rest of the
-    ' calling TCxx() doesn't keep running against a failed assertion -
-    ' RunTestCase() catches this and still runs TestCaseEnd(), then moves on
-    ' to the script's next test case.
+    ' Actual Value: <actualValue>" and marks the current test case failed
+    ' (for TestCaseEnd()/EndTest()'s summary), then returns normally -
+    ' unlike an ABORT (an unhandled exception), a FAIL does NOT stop the
+    ' rest of the calling TCxx() from running. That's deliberate: a test
+    ' case that makes several checks (e.g. one per drone it spawns) should
+    ' still run every remaining check and report all of their results,
+    ' rather than stopping at the first failure and leaving the rest
+    ' unverified. RunTestCase() still moves on to the script's next test
+    ' case only after the current TCxx() actually returns (whether it ended
+    ' in PASS or FAIL) or throws (ABORT) - a FAIL alone never advances past
+    ' the test case it happened in.
     Public Sub Fail(expectedValue As Object, actualValue As Object)
         Dim n As Integer = Common_Test_Functions.NextCheckNumber()
         Common_Test_Functions.WriteLog($"Output Check {n}: **FAIL** Expected Value: {expectedValue}, Actual Value: {actualValue}")
         Common_Test_Functions.MarkCurrentTestCaseFailed()
-        Throw New TestAssertionFailedException($"Expected {expectedValue}, got {actualValue}")
     End Sub
+
+    ' How many lines the current test case's Python process has printed so
+    ' far. Pass the returned value as a later check's sinceLine argument to
+    ' scope that check to output printed from this moment on, ignoring
+    ' everything before it. Needed whenever a single test case changes the
+    ' scene more than once (spawn, despawn, spawn again): without it, a
+    ' detection from an earlier part of the test case still satisfies
+    ' AssertTargetDetected, and no "nothing is detected now" check could
+    ' ever hold. Take the mark AFTER the scene change has settled - frames
+    ' already in the pipeline when the command was sent still print their
+    ' detections a moment later (see Common_Test_Functions.Wait()).
+    Public Function OutputMark() As Integer
+        Return Common_Test_Functions.PythonOutputSnapshot().Length
+    End Function
 
     ' Polls the captured Python output every 200ms until a line matching
     ' pattern (a .NET regex) appears or timeoutSeconds elapses, and returns
     ' the match (or Nothing on timeout). Only looks at lines newer than the
     ' last check each poll, so a slow-to-appear match still isn't missed.
     Public Function WaitForLogMatch(pattern As String, timeoutSeconds As Double) As Match
+        Return WaitForLogMatchSince(pattern, timeoutSeconds, 0)
+    End Function
+
+    ' WaitForLogMatch restricted to output printed since an OutputMark() -
+    ' lines before sinceLine are never examined, so an earlier part of the
+    ' same test case can't satisfy the match.
+    Public Function WaitForLogMatchSince(pattern As String, timeoutSeconds As Double, sinceLine As Integer) As Match
         Dim regex As New Regex(pattern)
         Dim deadline As DateTime = DateTime.Now.AddSeconds(timeoutSeconds)
-        Dim checkedUpTo As Integer = 0
+        Dim checkedUpTo As Integer = sinceLine
         Do
             Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
             For i As Integer = checkedUpTo To lines.Length - 1
@@ -55,7 +70,7 @@ Public Module Common_Test_Checks
                     Return m
                 End If
             Next
-            checkedUpTo = lines.Length
+            checkedUpTo = Math.Max(checkedUpTo, lines.Length)
             If DateTime.Now >= deadline Then
                 Exit Do
             End If
@@ -71,13 +86,24 @@ Public Module Common_Test_Checks
     ' outweigh a later, steadier one just because it happened to be printed
     ' first. Still waits up to timeoutSeconds if no match exists yet.
     Public Function WaitForLatestLogMatch(pattern As String, timeoutSeconds As Double) As Match
+        Return WaitForLatestLogMatchSince(pattern, timeoutSeconds, 0)
+    End Function
+
+    ' WaitForLatestLogMatch restricted to output printed since an
+    ' OutputMark() - lines before sinceLine are never examined, so a reading
+    ' left over from before a scene change (e.g. a still-warm profile
+    ' average taken with fewer targets in frame) can't satisfy a check meant
+    ' for the scene as it is now. Without this, the plain version would
+    ' return an already-existing match on its very first poll rather than
+    ' waiting for a fresh one to appear after the change.
+    Public Function WaitForLatestLogMatchSince(pattern As String, timeoutSeconds As Double, sinceLine As Integer) As Match
         Dim regex As New Regex(pattern)
         Dim deadline As DateTime = DateTime.Now.AddSeconds(timeoutSeconds)
         Do
             Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
             Dim latest As Match = Nothing
-            For Each line As String In lines
-                Dim m As Match = regex.Match(line)
+            For i As Integer = sinceLine To lines.Length - 1
+                Dim m As Match = regex.Match(lines(i))
                 If m.Success Then
                     latest = m
                 End If
@@ -109,7 +135,16 @@ Public Module Common_Test_Checks
     ' line) within timeoutSeconds - i.e. something was actually spawned and
     ' recognized, not just that a drone exists in the scene.
     Public Sub AssertTargetDetected(className As String, timeoutSeconds As Double)
-        Dim m As Match = WaitForLogMatch($"class={Regex.Escape(className)}\b", timeoutSeconds)
+        AssertTargetDetectedSince(className, timeoutSeconds, 0)
+    End Sub
+
+    ' AssertTargetDetected restricted to output printed since an
+    ' OutputMark() - for a test case that spawns, despawns and spawns again,
+    ' where a detection of the drone this test case spawned two spawns ago
+    ' would otherwise pass this check without the current target ever having
+    ' been seen.
+    Public Sub AssertTargetDetectedSince(className As String, timeoutSeconds As Double, sinceLine As Integer)
+        Dim m As Match = WaitForLogMatchSince($"class={Regex.Escape(className)}\b", timeoutSeconds, sinceLine)
         If m Is Nothing Then
             Fail(className, "not detected")
         Else
@@ -117,13 +152,51 @@ Public Module Common_Test_Checks
         End If
     End Sub
 
+    ' The inverse of AssertTargetDetectedSince: fails if ANY target of the
+    ' given class is reported over the next durationSeconds, and passes only
+    ' if the window stays clean the whole way through. For checking the
+    ' detector doesn't report a target in an empty scene (a false positive),
+    ' so it always waits out the full window rather than returning early.
+    ' sinceLine must be an OutputMark() taken after the scene was actually
+    ' emptied and the in-flight frames from before that had time to print -
+    ' otherwise this fails on a stale detection of a drone that's already
+    ' gone rather than on a real false positive.
+    Public Sub AssertNoTargetDetectedSince(className As String, durationSeconds As Double, sinceLine As Integer)
+        Dim regex As New Regex($"class={Regex.Escape(className)}\b")
+        Dim deadline As DateTime = DateTime.Now.AddSeconds(durationSeconds)
+        Dim checkedUpTo As Integer = sinceLine
+        Do
+            Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
+            For i As Integer = checkedUpTo To lines.Length - 1
+                If regex.IsMatch(lines(i)) Then
+                    Fail($"no {className} detections", lines(i))
+                    Return
+                End If
+            Next
+            checkedUpTo = Math.Max(checkedUpTo, lines.Length)
+            If DateTime.Now >= deadline Then
+                Exit Do
+            End If
+            Thread.Sleep(200)
+        Loop
+        Pass()
+    End Sub
+
     ' Collects every "class=<className> ... conf=<value>" reading seen over
     ' the next durationSeconds and returns the lowest confidence value, or
     ' Nothing if that class was never detected in the window.
     Public Function MinConfidenceOverWindow(className As String, durationSeconds As Double) As Double?
+        Return MinConfidenceOverWindowSince(className, durationSeconds, 0)
+    End Function
+
+    ' MinConfidenceOverWindow restricted to output printed since an
+    ' OutputMark(), so a test case that spawns more than one target in turn
+    ' reads each one's own confidence rather than the lowest anything has
+    ' scored since the test case began.
+    Public Function MinConfidenceOverWindowSince(className As String, durationSeconds As Double, sinceLine As Integer) As Double?
         Dim regex As New Regex($"class={Regex.Escape(className)}\b.*?conf=([\d.]+)")
         Dim deadline As DateTime = DateTime.Now.AddSeconds(durationSeconds)
-        Dim checkedUpTo As Integer = 0
+        Dim checkedUpTo As Integer = sinceLine
         Dim minSeen As Double? = Nothing
         Do
             Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
@@ -136,7 +209,7 @@ Public Module Common_Test_Checks
                     End If
                 End If
             Next
-            checkedUpTo = lines.Length
+            checkedUpTo = Math.Max(checkedUpTo, lines.Length)
             If DateTime.Now >= deadline Then
                 Exit Do
             End If
@@ -148,7 +221,16 @@ Public Module Common_Test_Checks
     ' AVS-03: fails unless every observed confidence reading for className,
     ' over the next durationSeconds, is at least threshold (e.g. 0.25).
     Public Sub AssertMinConfidenceAtLeast(className As String, threshold As Double, durationSeconds As Double)
-        Dim minSeen As Double? = MinConfidenceOverWindow(className, durationSeconds)
+        AssertMinConfidenceAtLeastSince(className, threshold, durationSeconds, 0)
+    End Sub
+
+    ' AssertMinConfidenceAtLeast restricted to output printed since an
+    ' OutputMark() - for a test case that checks one target after another,
+    ' where an earlier target's readings would otherwise decide this one's
+    ' result (and its "no detections" case could never be reached once
+    ' anything had been detected at all).
+    Public Sub AssertMinConfidenceAtLeastSince(className As String, threshold As Double, durationSeconds As Double, sinceLine As Integer)
+        Dim minSeen As Double? = MinConfidenceOverWindowSince(className, durationSeconds, sinceLine)
         If minSeen Is Nothing Then
             Fail(threshold, "no detections")
         ElseIf minSeen.Value < threshold Then
@@ -165,7 +247,16 @@ Public Module Common_Test_Checks
     ' timeoutSeconds should give the pipeline time to reach one if none has
     ' been captured yet.
     Public Sub AssertDetectLatencyBelow(maxMs As Double, timeoutSeconds As Double)
-        Dim m As Match = WaitForLatestLogMatch("detect=([\d.]+)ms", timeoutSeconds)
+        AssertDetectLatencyBelowSince(maxMs, timeoutSeconds, 0)
+    End Sub
+
+    ' AssertDetectLatencyBelow restricted to output printed since an
+    ' OutputMark() - for a test case that checks latency more than once as
+    ' the scene changes (e.g. after each of several spawns), where a profile
+    ' line left over from before the latest change would otherwise pass the
+    ' check without ever measuring a frame that had the current scene in it.
+    Public Sub AssertDetectLatencyBelowSince(maxMs As Double, timeoutSeconds As Double, sinceLine As Integer)
+        Dim m As Match = WaitForLatestLogMatchSince("detect=([\d.]+)ms", timeoutSeconds, sinceLine)
         If m Is Nothing Then
             Fail(maxMs, "no timing data")
             Return

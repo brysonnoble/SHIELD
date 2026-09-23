@@ -105,10 +105,11 @@ Test-case library functions (`STE_Test_Solution\lib\Common_Test_Functions.vb`):
 |---|---|
 | `BeginTest()` | Opens that run's two log files and writes the main one's header (test name, start time, machine, platform/source, both log paths). Doesn't touch Unity/Python itself - see `TestCaseBegin()`. |
 | `EndTest()` | Closes the pipeline if it's somehow still running (a safety net - `TestCaseEnd()` already closes it after every test case), writes the overall PASS/FAIL/ABORT summary and each test case's result, and closes both log files. |
-| `RunTestCase(testCase As Action)` | Call once per test case from `Main()`, e.g. `RunTestCase(AddressOf TC01)`, instead of calling `TCxx()` directly. Wraps it with `TestCaseBegin()`/`TestCaseEnd()`, catches a deliberate assertion failure (FAIL) or any other unhandled exception - including `TestCaseBegin()`'s own relaunch timing out (ABORT) - and either way lets the rest of the script's test cases (and `EndTest()`) still run. |
+| `RunTestCase(testCase As Action)` | Call once per test case from `Main()`, e.g. `RunTestCase(AddressOf TC01)`, instead of calling `TCxx()` directly. Wraps it with `TestCaseBegin()`/`TestCaseEnd()`. A deliberate assertion failure (`Common_Test_Checks.Fail()`) does NOT stop `testCase()` - `Fail()` logs and marks the test case FAILed, then returns normally, so `TCxx()` keeps running and every remaining check in it still gets made. Only an actual unhandled exception - `TestCaseBegin()`'s own relaunch timing out, or a real bug - is caught, marked ABORT, and cuts `testCase()` short. Either way (PASS, FAIL, or ABORT), the rest of the script's test cases (and `EndTest()`) still run. |
 | `EditVirtualEnvironment(VirtualEnvironment.Day` / `.Night)` | Switches the skybox. |
 | `InstDrone(DroneType.Quad` / `.Toad` / `.BumbleBee, x, y, z)` | Spawns a drone at the given world coordinates. |
 | `DespawnAllDrones()` | Destroys every drone `InstDrone()` has spawned so far. Not called automatically between test cases - `TestCaseEnd()` relaunches the whole Unity player instead - so call this yourself mid-test-case if a test case needs its drones gone before it ends. |
+| `Wait(seconds)` | Blocks the test case. `InstDrone()`/`DespawnAllDrones()` return once the scene command is sent, but the change only reaches the detector a few frames later (Unity's next `Update()`, then stream + decode + model), so a test case that changes the scene and then asserts on the result needs to let it take effect first - see `OutputMark()` below. |
 | `TestCaseBegin()` / `TestCaseEnd()` | Called by `RunTestCase()` around each `TCxx()` - see "Per-test-case reload" above. `TestCaseBegin()` closes any already-running Unity player instance, launches a fresh Unity + Python (with `-u --profile`, so its output streams promptly and includes per-stage timing), waits for Unity's scene-command listeners, then up to 30s for Python's own confirmation that its video connection to Unity is up (throwing if that never happens), then the configurable startup delay. `TestCaseEnd()` closes both programs and logs the test case's PASS/FAIL/ABORT result and traced requirements. Only call these directly if you have a reason not to go through `RunTestCase()`. |
 | `TraceTo(requirementName As String)` | Call once per requirement a test case exercises, anywhere in `TCxx()`. Logs that requirement as covered by the current test case and includes it in that test case's summary line. |
 
@@ -120,7 +121,7 @@ raw lines land in `_python_output.log`, not the main log):
 | Function | Effect |
 |---|---|
 | `Pass()` | Logs `Output Check <n>: PASS`, `<n>` being a 1-based counter of checks made in the current test case (reset by `TestCaseBegin()`). |
-| `Fail(expectedValue, actualValue)` | Logs `Output Check <n>: **FAIL** Expected Value: <expectedValue>, Actual Value: <actualValue>`, marks the test case FAILed, and throws `TestAssertionFailedException` so the rest of the calling `TCxx()` doesn't keep running. |
+| `Fail(expectedValue, actualValue)` | Logs `Output Check <n>: **FAIL** Expected Value: <expectedValue>, Actual Value: <actualValue>`, marks the test case FAILed, and returns normally - it does NOT stop the rest of the calling `TCxx()` from running. A test case that makes several checks keeps making all of them even after one fails, so every one's result gets reported instead of leaving the rest unverified. |
 | `WaitForLogMatch(pattern, timeoutSeconds)` | Polls the pipeline's captured output for the FIRST regex match, returning it (or `Nothing` on timeout). The building block most checks below are written on top of. |
 | `WaitForLatestLogMatch(pattern, timeoutSeconds)` | Like `WaitForLogMatch`, but returns the MOST RECENT match instead of the first - for a rolling reading (like `--profile`'s timing line) where an early sample shouldn't outweigh a later, steadier one. |
 | `AssertLogMatches(pattern, timeoutSeconds)` | `Fail`s unless `pattern` appears within `timeoutSeconds`. |
@@ -128,6 +129,37 @@ raw lines land in `_python_output.log`, not the main log):
 | `MinConfidenceOverWindow(className, durationSeconds)` | Returns the lowest confidence seen for `className` over the next `durationSeconds` (or `Nothing` if it was never detected). |
 | `AssertMinConfidenceAtLeast(className, threshold, durationSeconds)` | `Fail`s unless every reading in that window is at least `threshold` (AVS-03). |
 | `AssertDetectLatencyBelow(maxMs, timeoutSeconds)` | `Fail`s unless the most recently reported `--profile` average detect time is under `maxMs` (AVS-04). |
+| `AssertNoTargetDetectedSince(className, durationSeconds, sinceLine)` | The inverse: `Fail`s if *any* target of `className` is reported over the next `durationSeconds`, and passes only if the whole window stays clean (so it always waits the window out rather than returning early). For confirming an empty scene produces no false positive. |
+| `OutputMark()` | How many lines the pipeline has printed so far. See below. |
+
+### Checking more than one scene state in one test case
+
+Every check above scans everything the current test case's pipeline has
+printed, which is what you want when a test case sets up one scene and
+asserts on it. A test case that changes the scene more than once (spawn,
+despawn, spawn again) needs to scope each check to the state it's actually
+checking: take an `OutputMark()` and pass it as the `sinceLine` argument of
+the `...Since` variant - `WaitForLogMatchSince`, `WaitForLatestLogMatchSince`,
+`AssertTargetDetectedSince`, `MinConfidenceOverWindowSince`,
+`AssertMinConfidenceAtLeastSince`, `AssertDetectLatencyBelowSince` (each
+identical to the version above but blind to output printed before the mark),
+plus `AssertNoTargetDetectedSince`, which only exists in that form. Without
+it a detection from earlier in the same test case still satisfies
+`AssertTargetDetected`, an earlier target's confidence still decides
+`AssertMinConfidenceAtLeast`, a profile line from a lighter-loaded scene
+still decides `AssertDetectLatencyBelow`, and no "nothing is detected now"
+check could ever hold.
+
+Take the mark *after* the scene change has landed, not before: the frames
+already in the pipeline when the command was sent still print their
+detections a moment later, so a check for an emptied scene wants a
+`Wait()` between the `DespawnAllDrones()` and the `OutputMark()` or it fails
+on a stale detection of a drone that's already gone rather than on a real
+false positive. `Test Scripts\AVS\AVS_Detection_Test.vb` is the worked
+example - TC01 spawns, checks and despawns one target at a time across a
+range sweep, repeats the sweep, and confirms the empty scene in between;
+TC02 spawns drones cumulatively up to three at once, re-checking latency
+after each addition, then clears the scene and repeats.
 
 These checks only see what the Python process prints to stdout/stderr — to
 check something new, print a parseable line for it (matching the existing
