@@ -104,8 +104,20 @@ namespace STE
             AnyRunning = TestScriptRunning || ProgramsRunning;
         }
 
-        private Process _runningProcess;
-        private readonly List<Process> _launchedProgramProcesses = new List<Process>();
+        // The "dotnet build" RunSelectedTests() runs first - no GPU state, so
+        // Stop may kill it outright.
+        private Process _runningBuildProcess;
+
+        // The STE_Test_Solution.exe run in progress, if any. Never killed
+        // while it may still own Unity/Python - see StopTestRunnerAsync().
+        private Process _runningTestProcess;
+
+        private readonly List<(LaunchableProgram Program, Process Process)> _launchedPrograms = new List<(LaunchableProgram, Process)>();
+
+        // Set while StopRunningTest() is waiting on processes to exit, so
+        // Run/Launch Programs (or a second Stop) can't start a new Unity/
+        // Python alongside ones still shutting down.
+        private bool _stopInProgress;
 
         public HomePage()
         {
@@ -257,7 +269,7 @@ namespace STE
         // time.
         private async void RunSelectedTests(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
-            if (TestScriptRunning)
+            if (TestScriptRunning || _stopInProgress)
                 return;
 
             List<string> selectedTests = TestList.Where(t => t.IsSelected).Select(t => t.Text).ToList();
@@ -297,10 +309,14 @@ namespace STE
                         process.StartInfo.ArgumentList.Add(AppSettings.StartupDelaySeconds.ToString());
                         process.StartInfo.ArgumentList.Add(AppSettings.LogDirectory);
                         process.StartInfo.UseShellExecute = false;
+                        // Stop's channel to the runner (Program.vb's
+                        // StartStopListener()).
+                        process.StartInfo.RedirectStandardInput = true;
 
-                        _runningProcess = process;
+                        _runningTestProcess = process;
                         process.Start();
                         await process.WaitForExitAsync();
+                        _runningTestProcess = null;
                     }
 
                     BoolStringClass finishedTest = TestList.FirstOrDefault(t => t.Text == testName);
@@ -313,7 +329,8 @@ namespace STE
             }
             finally
             {
-                _runningProcess = null;
+                _runningBuildProcess = null;
+                _runningTestProcess = null;
                 TestScriptRunning = false;
             }
         }
@@ -334,9 +351,10 @@ namespace STE
                 process.StartInfo.ArgumentList.Add("minimal");
                 process.StartInfo.UseShellExecute = false;
 
-                _runningProcess = process;
+                _runningBuildProcess = process;
                 process.Start();
                 await process.WaitForExitAsync();
+                _runningBuildProcess = null;
                 return process.ExitCode == 0;
             }
         }
@@ -346,7 +364,7 @@ namespace STE
         // whatever's checked in TestList - this never runs a test script.
         private void LaunchPrograms(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
         {
-            if (AnyRunning)
+            if (AnyRunning || _stopInProgress)
                 return;
 
             List<LaunchableProgram> selectedPrograms = LaunchablePrograms.All
@@ -360,7 +378,7 @@ namespace STE
             {
                 try
                 {
-                    _launchedProgramProcesses.Add(program.Start());
+                    _launchedPrograms.Add((program, program.Start()));
                 }
                 catch (Exception ex)
                 {
@@ -368,44 +386,93 @@ namespace STE
                 }
             }
 
-            ProgramsRunning = _launchedProgramProcesses.Count > 0;
+            ProgramsRunning = _launchedPrograms.Count > 0;
         }
 
-        // Closes a launched program, preferring a graceful WM_CLOSE over an
-        // outright Kill. The Unity virtual camera (and anything else with a
-        // GPU device open) needs to run its own shutdown path to release
-        // Direct3D/OpenGL resources cleanly - Kill (TerminateProcess) skips
-        // that, and killing a live graphics process this way has been
-        // observed to crash the GPU driver (BSOD) instead of just closing
-        // the window. Only force-kill if it doesn't exit on its own.
-        private static void CloseProcessGracefully(Process process)
+        // How long the test runner gets to close Unity/Python itself and
+        // exit after "STOP" - comfortably more than its own worst case
+        // (ClosePythonPipeline()'s 15s + CloseUnityPlayer()'s 10s, possibly
+        // after the test thread's own in-progress close of the same).
+        private static readonly TimeSpan TestRunnerStopTimeout = TimeSpan.FromSeconds(60);
+
+        // Never kills anything holding a live GPU device (Unity's Direct3D
+        // device, the Python pipeline's CUDA context) - TerminateProcess on
+        // one has crashed the GPU driver (BSOD) on this project's hardware.
+        // This used to CloseMainWindow() and then Kill(entireProcessTree) -
+        // and since neither STE_Test_Solution.exe (a console app) nor the
+        // venv's python.exe launcher has a main window, that meant an
+        // immediate tree kill of the test runner along with the Unity/Python
+        // it had launched. Now each process is asked to quit its own way (see
+        // StopTestRunnerAsync() and LaunchableProgram.StopAsync()).
+        private async void StopRunningTest(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+        {
+            if (_stopInProgress)
+                return;
+            _stopInProgress = true;
+            try
+            {
+                // Also what RunSelectedTests() checks to not start the next
+                // selected test once this one's runner exits.
+                TestScriptRunning = false;
+
+                var stops = new List<Task>();
+
+                Process build = _runningBuildProcess;
+                if (build != null)
+                {
+                    try { build.Kill(entireProcessTree: true); }
+                    catch (Exception ex) { Debug.WriteLine($"[HomePage] Failed to stop the build: {ex.Message}"); }
+                }
+
+                Process testRunner = _runningTestProcess;
+                if (testRunner != null)
+                    stops.Add(StopTestRunnerAsync(testRunner));
+
+                foreach ((LaunchableProgram program, Process process) in _launchedPrograms)
+                    stops.Add(program.StopAsync(process));
+                _launchedPrograms.Clear();
+
+                await Task.WhenAll(stops);
+                ProgramsRunning = false;
+            }
+            finally
+            {
+                _stopInProgress = false;
+            }
+        }
+
+        // Asks the test runner to stop (Program.vb's StartStopListener() ->
+        // Common_Test_Functions.StopTest()), which closes Unity/Python
+        // gracefully, logs the run as STOPPED and exits. If it somehow hasn't
+        // exited within TestRunnerStopTimeout, kills the runner process
+        // ALONE (it holds no GPU state itself) - never its tree, so any
+        // Unity/Python it couldn't close are left running to close by hand.
+        private static async Task StopTestRunnerAsync(Process testRunner)
         {
             try
             {
-                if (process.HasExited)
+                if (testRunner.HasExited)
                     return;
 
-                if (process.CloseMainWindow())
-                    process.WaitForExit(3000);
+                testRunner.StandardInput.WriteLine("STOP");
+                testRunner.StandardInput.Flush();
 
-                if (!process.HasExited)
-                    process.Kill(entireProcessTree: true);
+                if (!await LaunchableProgram.WaitForExitAsync(testRunner, TestRunnerStopTimeout))
+                {
+                    Debug.WriteLine(
+                        $"[HomePage] Test runner did not exit within {TestRunnerStopTimeout.TotalSeconds}s of STOP - " +
+                        "killing it alone (not its Unity/Python children; close those manually if still open).");
+                    testRunner.Kill(entireProcessTree: false);
+                }
             }
-            catch { }
-        }
-
-        private void StopRunningTest(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-        {
-            TestScriptRunning = false;
-            if (_runningProcess != null)
-                CloseProcessGracefully(_runningProcess);
-
-            foreach (Process process in _launchedProgramProcesses)
+            catch (InvalidOperationException)
             {
-                CloseProcessGracefully(process);
+                // RunSelectedTests() already saw it exit and disposed it.
             }
-            _launchedProgramProcesses.Clear();
-            ProgramsRunning = false;
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HomePage] Failed to stop the test runner: {ex.Message}");
+            }
         }
 
         public class BoolStringClass : INotifyPropertyChanged

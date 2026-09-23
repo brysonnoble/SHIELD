@@ -50,6 +50,15 @@ Public Module Common_Test_Functions
     ' behind the other.
     Private ReadOnly pythonLogLock As New Object()
 
+    ' Guards launching/closing Unity+Python (LaunchPipeline()/
+    ' ClosePipeline()) against StopTest(), which runs on Program.vb's stdin
+    ' listener thread while the test script is still running on the main
+    ' thread - so a Stop can't race a test case into launching a fresh
+    ' Unity/Python after StopTest() has already closed the old ones.
+    ' stopRequested is only read/written under this lock.
+    Private ReadOnly pipelineLock As New Object()
+    Private stopRequested As Boolean
+
     Public Sub BeginTest()
         testStartTime = DateTime.Now
         Dim runFolder As String = Path.Combine(
@@ -99,6 +108,43 @@ Public Module Common_Test_Functions
         Else
             overall = "PASS"
         End If
+        WriteSummaryAndCloseLogs(overall)
+    End Sub
+
+    ' Called (on Program.vb's stdin listener thread) when STE's Stop button
+    ' sends "STOP". Closes Unity/Python the same graceful, never-kill way a
+    ' normal test case end does (ClosePipeline()) - STE used to
+    ' Kill(entireProcessTree) this whole process instead, which took Unity
+    ' and the CUDA Python pipeline down with it, the same GPU driver crash
+    ' (BSOD) risk CloseUnityPlayer()/ClosePythonPipeline() exist to avoid -
+    ' then writes an EndTest summary marked STOPPED (which STE's "last
+    ' result" column reads) and exits. Never returns.
+    '
+    ' Holds pipelineLock, then logLock, until the process exits, so the
+    ' main thread's test script can neither launch a new Unity/Python nor
+    ' append to the log (e.g. ABORT lines from its scene commands failing
+    ' once Unity is gone) after the stop. Lock order is safe: the main
+    ' thread only ever takes logLock inside WriteLog(), which takes no other
+    ' lock, so it can't be holding logLock while waiting on pipelineLock.
+    Public Sub StopTest()
+        SyncLock pipelineLock
+            stopRequested = True
+            SyncLock logLock
+                WriteLog("=== Stop requested from STE - closing Unity/Python and ending the run ===")
+                ClosePipeline()
+                WriteSummaryAndCloseLogs("STOPPED")
+                Environment.Exit(2)
+            End SyncLock
+        End SyncLock
+    End Sub
+
+    ' EndTest()/StopTest()'s shared summary: the "=== EndTest: ... ===" line
+    ' (STE's HomePage.RefreshLastRunInfo() reads the result from it), one
+    ' line per finished test case, and the duration. Then closes both logs.
+    Private Sub WriteSummaryAndCloseLogs(overall As String)
+        Dim passCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Pass).Count()
+        Dim failCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Fail).Count()
+        Dim abortCount As Integer = testCaseResults.Where(Function(r) r.Status = TestCaseStatus.Abort).Count()
         WriteLog($"=== EndTest: {CurrentTestName} - {overall} (Pass: {passCount}, Fail: {failCount}, Abort: {abortCount}, Total: {testCaseResults.Count}) ===")
         For Each result In testCaseResults
             Dim traces As String = If(result.Traces.Count > 0, " [" & String.Join(", ", result.Traces) & "]", "")
@@ -195,6 +241,45 @@ Public Module Common_Test_Functions
     ' RunTestCase()'s catch-all mark the test case ABORTed) if Python's
     ' video connection to Unity is never confirmed within 30s.
     Private Sub LaunchPipeline()
+        ' Held until both processes are started and assigned, so StopTest()
+        ' either runs first (and this throws instead of launching) or runs
+        ' after (and sees unityProcess/pythonProcess to close).
+        SyncLock pipelineLock
+            If stopRequested Then
+                Throw New OperationCanceledException("Test run stopped from STE.")
+            End If
+            StartPipelineProcesses()
+        End SyncLock
+
+        ' Don't let the test case start until every launched program is
+        ' actually up, not just started - Process.Start() returning only
+        ' means the OS created the process, not that Unity has reached Play
+        ' and bound its scene command listeners.
+        WaitForListener(UNITY_HOST, UNITY_ENV_PORT)
+        WaitForListener(UNITY_HOST, UNITY_SPAWN_PORT)
+
+        ' The listeners above are Unity's scene-command ports, separate from
+        ' the actual video link Python's own UnityStreamSource opens to
+        ' Unity's CameraStreamer (port 5555) - confirm that one too, via
+        ' Python's own "Connected to Unity at ..." line (video_source.py),
+        ' rather than assuming it came up just because the scene-command
+        ' ports did. By the time that line prints, the YOLO model has
+        ' already loaded too (SHIELDDetector() runs before source.open() in
+        ' __main__.py), so this is a strictly stronger readiness signal than
+        ' the scene-command listeners alone.
+        If Common_Test_Checks.WaitForLogMatch("Connected to Unity", 30) Is Nothing Then
+            Throw New TimeoutException("Unity video connection not confirmed within 30s.")
+        End If
+
+        ' Confirms the video link and scene-command listeners are up, but
+        ' not that everything else (the OpenCV preview window, Unity's scene
+        ' fully rendering) has finished opening. Configurable in STE's
+        ' Settings page.
+        Thread.Sleep(StartupDelaySeconds * 1000)
+    End Sub
+
+    ' LaunchPipeline()'s process-starting half - call with pipelineLock held.
+    Private Sub StartPipelineProcesses()
         ClosePipeline()
 
         ' The raw pipeline log spans the whole script (opened once by
@@ -228,42 +313,19 @@ Public Module Common_Test_Functions
             redirectStandardInput:=True)
         pythonProcess = pythonRun.Process
         pythonOutput = pythonRun.Output
-
-        ' Don't let the test case start until every launched program is
-        ' actually up, not just started - Process.Start() returning only
-        ' means the OS created the process, not that Unity has reached Play
-        ' and bound its scene command listeners.
-        WaitForListener(UNITY_HOST, UNITY_ENV_PORT)
-        WaitForListener(UNITY_HOST, UNITY_SPAWN_PORT)
-
-        ' The listeners above are Unity's scene-command ports, separate from
-        ' the actual video link Python's own UnityStreamSource opens to
-        ' Unity's CameraStreamer (port 5555) - confirm that one too, via
-        ' Python's own "Connected to Unity at ..." line (video_source.py),
-        ' rather than assuming it came up just because the scene-command
-        ' ports did. By the time that line prints, the YOLO model has
-        ' already loaded too (SHIELDDetector() runs before source.open() in
-        ' __main__.py), so this is a strictly stronger readiness signal than
-        ' the scene-command listeners alone.
-        If Common_Test_Checks.WaitForLogMatch("Connected to Unity", 30) Is Nothing Then
-            Throw New TimeoutException("Unity video connection not confirmed within 30s.")
-        End If
-
-        ' Confirms the video link and scene-command listeners are up, but
-        ' not that everything else (the OpenCV preview window, Unity's scene
-        ' fully rendering) has finished opening. Configurable in STE's
-        ' Settings page.
-        Thread.Sleep(StartupDelaySeconds * 1000)
     End Sub
 
     ' Closes this test case's Unity/Python processes, if running. Safe to
     ' call even if neither is running (e.g. TestCaseBegin()'s own
-    ' LaunchPipeline() calls this first, before either exists yet).
+    ' LaunchPipeline() calls this first, before either exists yet), and
+    ' from either thread (see pipelineLock/StopTest()).
     Private Sub ClosePipeline()
-        ClosePythonPipeline(pythonProcess)
-        CloseUnityPlayer(unityProcess)
-        pythonProcess = Nothing
-        unityProcess = Nothing
+        SyncLock pipelineLock
+            ClosePythonPipeline(pythonProcess)
+            CloseUnityPlayer(unityProcess)
+            pythonProcess = Nothing
+            unityProcess = Nothing
+        End SyncLock
     End Sub
 
     ' Closes the Python detection pipeline ONLY by asking it to quit over
