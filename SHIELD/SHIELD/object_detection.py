@@ -43,13 +43,13 @@ class _CentroidKalmanFilter:
 
     def predict(self):
         state = self.kf.predict()
-        return float(state[0]), float(state[1])
+        return float(state[0, 0]), float(state[1, 0])
 
     def correct(self, cx, cy):
         measurement = np.array([[cx], [cy]], dtype=np.float32)
         state = self.kf.correct(measurement)
         self.age_since_seen = 0
-        return float(state[0]), float(state[1])
+        return float(state[0, 0]), float(state[1, 0])
 
 
 class SHIELDDetector:
