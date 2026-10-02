@@ -280,6 +280,28 @@ Public Module Common_Test_Functions
         ' fully rendering) has finished opening. Configurable in STE's
         ' Settings page.
         Thread.Sleep(StartupDelaySeconds * 1000)
+
+        ' "Connected to Unity" prints before the first frame reaches the
+        ' model, so a pipeline that crashes on its first inference (e.g. a
+        ' CUDA device requested on a CPU-only torch build) still gets past
+        ' the wait above - catch that here rather than letting every check
+        ' in the test case FAIL against output that will never come.
+        ThrowIfPipelineExited()
+    End Sub
+
+    ' Throws (letting RunTestCase()'s catch-all mark the test case ABORTed)
+    ' if this test case's Python pipeline has exited on its own. Called by
+    ' LaunchPipeline() and by Common_Test_Checks.vb's Pass()/Fail() before
+    ' recording a result, so a crashed pipeline is reported as an ABORT
+    ' (nothing was actually verified) instead of as detection FAILs - or
+    ' worse, as a "nothing detected" PASS. The traceback itself is in the
+    ' run's "_python_output.log".
+    Public Sub ThrowIfPipelineExited()
+        Dim process As Process = pythonProcess
+        If process IsNot Nothing AndAlso process.HasExited Then
+            Throw New InvalidOperationException(
+                $"The Python pipeline exited unexpectedly (exit code {process.ExitCode}) - see the _python_output.log for its error.")
+        End If
     End Sub
 
     ' LaunchPipeline()'s process-starting half - call with pipelineLock held.

@@ -11,6 +11,7 @@ Public Module Common_Test_Checks
     ' Logs "Output Check <n>: PASS", <n> being a 1-based counter of checks
     ' made so far in the current test case (reset by TestCaseBegin()).
     Public Sub Pass()
+        Common_Test_Functions.ThrowIfPipelineExited()
         Dim n As Integer = Common_Test_Functions.NextCheckNumber()
         Common_Test_Functions.WriteLog($"Output Check {n}: PASS")
     End Sub
@@ -28,6 +29,7 @@ Public Module Common_Test_Checks
     ' in PASS or FAIL) or throws (ABORT) - a FAIL alone never advances past
     ' the test case it happened in.
     Public Sub Fail(expectedValue As Object, actualValue As Object)
+        Common_Test_Functions.ThrowIfPipelineExited()
         Dim n As Integer = Common_Test_Functions.NextCheckNumber()
         Common_Test_Functions.WriteLog($"Output Check {n}: **FAIL** Expected Value: {expectedValue}, Actual Value: {actualValue}")
         Common_Test_Functions.MarkCurrentTestCaseFailed()
