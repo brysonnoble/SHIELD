@@ -14,7 +14,7 @@ DEVICE = "cuda"
 # Detector confidence floor for candidate detections - not an engagement
 # gate. See AVS.03 for the >=25% confidence-while-en-route requirement,
 # enforced in the GCS UI (gcs_ui.ENGAGE_CONFIDENCE_FLOOR).
-CONFIDENCE_THRESHOLD = 0.05
+CONFIDENCE_THRESHOLD = 0.25
 
 # The custom model has two classes: "drone" and "balloon". Set to e.g.
 # ["drone"] to ignore balloon detections (e.g. if balloons are only
