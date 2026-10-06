@@ -6,10 +6,16 @@ using UnityEngine;
 
 // Listens for a spawn command from the external STE control system and
 // instantiates one of the three drone prefabs at the requested world
-// coordinates.
+// coordinates, optionally flying it on to a second position.
 //
-// Line-based text protocol: each connection sends either
-// "SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>\n" or "DESPAWN ALL\n". See
+// Line-based text protocol: each connection sends one of
+//   "SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>\n"
+//       - spawns a drone that hovers in place
+//   "SPAWN <Quad|Toad|BumbleBee> <x> <y> <z> <endX> <endY> <endZ> <speed>\n"
+//       - spawns a drone facing the end position, which DroneAutopilot then
+//         flies it to at <speed> m/s and hovers there
+//   "DESPAWN ALL\n"
+// See
 // Common_Test_Functions.vb (InstDrone/DespawnAllDrones) in the STE test
 // library for the matching VB.NET client.
 //
@@ -73,9 +79,9 @@ public class DroneSpawner : MonoBehaviour
         }
 
         string[] parts = command.Split(' ');
-        if (parts.Length != 5 || parts[0] != "SPAWN")
+        if ((parts.Length != 5 && parts.Length != 9) || parts[0] != "SPAWN")
         {
-            Debug.LogError($"[DroneSpawner] Unrecognized command '{command}' (expected 'SPAWN <Quad|Toad|BumbleBee> <x> <y> <z>' or 'DESPAWN ALL').");
+            Debug.LogError($"[DroneSpawner] Unrecognized command '{command}' (expected 'SPAWN <Quad|Toad|BumbleBee> <x> <y> <z> [<endX> <endY> <endZ> <speed>]' or 'DESPAWN ALL').");
             return;
         }
 
@@ -86,14 +92,52 @@ public class DroneSpawner : MonoBehaviour
             return;
         }
 
-        if (!TryParseCoordinates(parts, out Vector3 position))
+        if (!TryParseVector(parts, 2, out Vector3 position))
         {
             Debug.LogError($"[DroneSpawner] Could not parse coordinates from command '{command}'.");
             return;
         }
 
-        GameObject drone = Instantiate(prefab, position, Quaternion.identity);
-        spawnedDrones.Add(drone);
+        if (parts.Length == 5)
+        {
+            spawnedDrones.Add(InstantiateDrone(prefab, position));
+            return;
+        }
+
+        if (!TryParseVector(parts, 5, out Vector3 endPosition) || !TryParseFloat(parts[8], out float speed))
+        {
+            Debug.LogError($"[DroneSpawner] Could not parse end coordinates/speed from command '{command}'.");
+            return;
+        }
+        if (speed <= 0f)
+        {
+            Debug.LogError($"[DroneSpawner] Speed must be positive in command '{command}'.");
+            return;
+        }
+
+        spawnedDrones.Add(InstantiateDrone(prefab, position, endPosition, speed));
+    }
+
+    // Spawns a drone that hovers at startPosition.
+    private GameObject InstantiateDrone(GameObject prefab, Vector3 startPosition)
+    {
+        return Instantiate(prefab, startPosition, Quaternion.identity);
+    }
+
+    // Spawns a drone at startPosition and has DroneAutopilot fly it to
+    // endPosition at speed (m/s), where it then hovers. It spawns already
+    // facing endPosition so it sets off nose-first instead of yawing round
+    // on the spot.
+    private GameObject InstantiateDrone(GameObject prefab, Vector3 startPosition, Vector3 endPosition, float speed)
+    {
+        Vector3 flatHeading = new Vector3(endPosition.x - startPosition.x, 0f, endPosition.z - startPosition.z);
+        Quaternion rotation = flatHeading.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(flatHeading) : Quaternion.identity;
+
+        GameObject drone = Instantiate(prefab, startPosition, rotation);
+        DroneAutopilot autopilot = drone.AddComponent<DroneAutopilot>();
+        autopilot.targetPosition = endPosition;
+        autopilot.speed = speed;
+        return drone;
     }
 
     private void DespawnAll()
@@ -117,18 +161,24 @@ public class DroneSpawner : MonoBehaviour
         }
     }
 
-    private static bool TryParseCoordinates(string[] parts, out Vector3 position)
+    // Parses parts[start], parts[start + 1], parts[start + 2] as x/y/z.
+    private static bool TryParseVector(string[] parts, int start, out Vector3 vector)
     {
-        position = Vector3.zero;
-        if (!float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float x)
-            || !float.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float y)
-            || !float.TryParse(parts[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float z))
+        vector = Vector3.zero;
+        if (!TryParseFloat(parts[start], out float x)
+            || !TryParseFloat(parts[start + 1], out float y)
+            || !TryParseFloat(parts[start + 2], out float z))
         {
             return false;
         }
 
-        position = new Vector3(x, y, z);
+        vector = new Vector3(x, y, z);
         return true;
+    }
+
+    private static bool TryParseFloat(string text, out float value)
+    {
+        return float.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
     }
 
     private void ServerLoop()

@@ -495,6 +495,24 @@ Public Module Common_Test_Functions
         SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, command)
     End Sub
 
+    ' Same as above, but the drone then flies in a straight line from
+    ' (x, y, z) to (endX, endY, endZ) at speedMps meters per second and
+    ' hovers there (DroneSpawner.cs/DroneAutopilot.cs). It flies with the
+    ' drone pack's flight physics - nose-first, pitching and banking into
+    ' its motion, easing in and out of speed - so it takes a little longer
+    ' than distance / speedMps to arrive. Returns as soon as the command is
+    ' sent, not when the drone arrives.
+    Public Sub InstDrone(droneType As Common_Test_Variables.DroneType, x As Double, y As Double, z As Double,
+                         endX As Double, endY As Double, endZ As Double, speedMps As Double)
+        If speedMps <= 0 Then
+            Throw New ArgumentOutOfRangeException(NameOf(speedMps), speedMps, "Drone speed must be positive.")
+        End If
+        Dim command As String = String.Format(CultureInfo.InvariantCulture,
+                                               "SPAWN {0} {1} {2} {3} {4} {5} {6} {7}",
+                                               droneType.ToString(), x, y, z, endX, endY, endZ, speedMps)
+        SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, command)
+    End Sub
+
     ' Sends a command over TCP to the Unity scene to destroy every drone
     ' InstDrone() has spawned so far (DroneSpawner.cs's DespawnAll()).
     Public Sub DespawnAllDrones()
