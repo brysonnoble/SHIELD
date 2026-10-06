@@ -25,6 +25,17 @@ CLASS_FILTER = None
 # ByteTrack, bundled with ultralytics.
 TRACKER_CONFIG = "bytetrack.yaml"
 
+# Duplicate-box suppression, applied between detection and tracking (see
+# SHIELDDetector._non_duplicate_indices). A lower-confidence box of the
+# same class is dropped as a duplicate when at least this fraction of the
+# smaller box lies inside the other...
+DUPLICATE_BOX_CONTAINMENT = 0.9
+# ...and their centers are within this fraction of the larger box's
+# width/height of each other. Observed duplicates sit within ~0.15; a
+# second drone partly behind a nearer one is rarely this well centered,
+# but if it is, it's suppressed until the two separate.
+DUPLICATE_BOX_CENTER_OFFSET = 0.3
+
 # Drop a track's Kalman filter if it hasn't been matched to a detection
 # for this many consecutive frames.
 TRACK_MAX_AGE = 30

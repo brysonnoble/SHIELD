@@ -8,6 +8,9 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from ultralytics.trackers.byte_tracker import BYTETracker
+from ultralytics.utils import YAML, IterableSimpleNamespace
+from ultralytics.utils.checks import check_yaml
 
 import config
 
@@ -38,7 +41,18 @@ class _CentroidKalmanFilter:
         )
         self.kf.processNoiseCov = np.eye(4, dtype=np.float32) * 1e-2
         self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * 1e-1
-        self.kf.statePost = np.array([[cx], [cy], [0], [0]], dtype=np.float32)
+        # Start at the first detection with an unknown velocity. The first
+        # correct() runs without a predict() before it, so it reads the
+        # *pre* state/covariance - OpenCV leaves those at zero, which made
+        # every new track report (0, 0) and then slide in from the corner
+        # over ~10 frames. Position is as certain as one measurement;
+        # velocity is unknown, so it adapts within a frame or two.
+        initial_state = np.array([[cx], [cy], [0], [0]], dtype=np.float32)
+        initial_cov = np.diag([1e-1, 1e-1, 1e2, 1e2]).astype(np.float32)
+        self.kf.statePre = initial_state.copy()
+        self.kf.statePost = initial_state.copy()
+        self.kf.errorCovPre = initial_cov.copy()
+        self.kf.errorCovPost = initial_cov.copy()
         self.age_since_seen = 0
 
     def predict(self):
@@ -61,14 +75,23 @@ class SHIELDDetector:
         class_filter=config.CLASS_FILTER,
         tracker_config=config.TRACKER_CONFIG,
         max_track_age=config.TRACK_MAX_AGE,
+        duplicate_containment=config.DUPLICATE_BOX_CONTAINMENT,
+        duplicate_center_offset=config.DUPLICATE_BOX_CENTER_OFFSET,
     ):
         self.model = YOLO(model_path)
         self.device = device
         self.confidence_threshold = confidence_threshold
-        self.tracker_config = tracker_config
         self.max_track_age = max_track_age
+        self.duplicate_containment = duplicate_containment
+        self.duplicate_center_offset = duplicate_center_offset
         self._class_ids = self._resolve_class_ids(class_filter)
         self._trackers = {}  # track_id -> _CentroidKalmanFilter
+        # ByteTrack is run here rather than through model.track(), so that
+        # duplicate boxes can be removed between detection and tracking -
+        # model.track() hands every box straight to the tracker, which then
+        # gives each duplicate its own track ID.
+        tracker_args = IterableSimpleNamespace(**YAML.load(check_yaml(tracker_config)))
+        self._byte_tracker = BYTETracker(args=tracker_args)
 
     def _resolve_class_ids(self, class_filter):
         if not class_filter:
@@ -77,24 +100,26 @@ class SHIELDDetector:
         return [name_to_id[name] for name in class_filter if name in name_to_id]
 
     def process_frame(self, frame):
-        results = self.model.track(
+        results = self.model.predict(
             frame,
-            persist=True,
             conf=self.confidence_threshold,
             classes=self._class_ids,
-            tracker=self.tracker_config,
             device=self.device,
             verbose=False,
         )
+        boxes = results[0].boxes.cpu().numpy()
+        boxes = boxes[self._non_duplicate_indices(boxes.xyxy, boxes.conf, boxes.cls)]
+        # Rows of (x1, y1, x2, y2, track_id, score, cls, detection_index)
+        # for every track matched to a detection this frame.
+        tracks = self._byte_tracker.update(boxes, frame)
 
         detections = []
         seen_ids = set()
-        boxes = results[0].boxes
-        if boxes is not None and boxes.id is not None:
-            xyxy = boxes.xyxy.cpu().numpy()
-            ids = boxes.id.cpu().numpy().astype(int)
-            confs = boxes.conf.cpu().numpy()
-            classes = boxes.cls.cpu().numpy().astype(int)
+        if len(tracks):
+            xyxy = tracks[:, :4]
+            ids = tracks[:, 4].astype(int)
+            confs = tracks[:, 5]
+            classes = tracks[:, 6].astype(int)
 
             for box, track_id, conf, cls_id in zip(xyxy, ids, confs, classes):
                 x1, y1, x2, y2 = box
@@ -123,6 +148,43 @@ class SHIELDDetector:
 
         self._age_out_missed_tracks(seen_ids)
         return detections
+
+    def _non_duplicate_indices(self, xyxy, confs, classes):
+        """Indices of the boxes to keep after dropping duplicates of the
+        same target: a box of the same class nested around (or inside) a
+        higher-confidence box, sharing roughly its center.
+
+        The detector tends to put one or two looser, lower-confidence boxes
+        around a drone - most often one cut off by the frame edge or at
+        mid range. Each fully contains the real box, but they overlap it
+        too little (IoU as low as ~0.2) for the model's own NMS (IoU 0.7)
+        to merge them, and ByteTrack would otherwise give every one of them
+        its own track ID.
+        """
+        keep = []
+        for i in np.argsort(-confs):
+            if not any(
+                classes[i] == classes[k] and self._is_duplicate(xyxy[i], xyxy[k]) for k in keep
+            ):
+                keep.append(i)
+        return np.array(sorted(keep), dtype=int)
+
+    def _is_duplicate(self, a, b):
+        ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+        iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+        area_a = (a[2] - a[0]) * (a[3] - a[1])
+        area_b = (b[2] - b[0]) * (b[3] - b[1])
+        smaller_area = min(area_a, area_b)
+        if smaller_area <= 0 or ix * iy / smaller_area < self.duplicate_containment:
+            return False
+        # Nested, but is it centered on the same thing? Measured against
+        # the larger box, so a small drone that merely sits inside a near
+        # drone's box (off to one side) isn't mistaken for a duplicate.
+        larger = a if area_a >= area_b else b
+        width, height = larger[2] - larger[0], larger[3] - larger[1]
+        dx = abs((a[0] + a[2]) - (b[0] + b[2])) / 2
+        dy = abs((a[1] + a[3]) - (b[1] + b[3])) / 2
+        return dx <= self.duplicate_center_offset * width and dy <= self.duplicate_center_offset * height
 
     def _age_out_missed_tracks(self, seen_ids):
         stale = []

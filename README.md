@@ -68,6 +68,9 @@ Unity "SHIELD Virtual Camera"  --TCP/JPEG-->  Python pipeline
                                                    v
                                     Ultralytics YOLO (detection)
                                                    v
+                                    Duplicate-box suppression
+                                    (nested boxes on one target)
+                                                   v
                                     ByteTrack (persistent IDs, via
                                     ultralytics' bundled tracker)
                                                    v
@@ -194,6 +197,7 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.05) - not an engagement gate. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
 | `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
+| `DUPLICATE_BOX_CONTAINMENT` / `DUPLICATE_BOX_CENTER_OFFSET` | When a lower-confidence box of the same class counts as a duplicate of another and is dropped before tracking: how much of the smaller box must lie inside the other, and how close (as a fraction of the larger box) their centers must be. |
 | `TRACK_MAX_AGE` | Frames a track can go undetected before its Kalman filter is dropped. |
 | `UNITY_HOST` / `UNITY_PORT` | Must match `CameraStreamer.cs`'s `port` field. |
 | `WEBCAM_INDEX` | Default webcam device. |
