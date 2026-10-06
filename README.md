@@ -100,9 +100,11 @@ covers the mechanical/avionics side of the project.
 - Internet access on first run (YOLO model weights auto-download, ~19 MB)
 
 Inference defaults to GPU (`config.py`, `DEVICE = "cuda"`) to match the
-Orin Nano's onboard GPU at inference time. On a dev PC without an
-NVIDIA GPU (or with a PyTorch build that doesn't match your driver),
-switch this to `DEVICE = "cpu"`.
+Orin Nano's onboard GPU at inference time. That needs an NVIDIA GPU with a
+driver supporting CUDA 12.6+ (check the "CUDA Version" in `nvidia-smi`'s
+header) and a CUDA build of PyTorch, which `setup.bat` installs
+automatically. On a dev PC without an NVIDIA GPU, switch this to
+`DEVICE = "cpu"`.
 
 ## Quick start
 
@@ -113,7 +115,14 @@ setup.bat
 ```
 
 This creates a virtual environment, installs all Python dependencies,
-and pre-downloads the YOLO model. See [`setup.bat`](setup.bat) for what
+and pre-downloads the YOLO model. If it finds an NVIDIA GPU (via
+`nvidia-smi`), it installs PyTorch from PyTorch's own CUDA wheel index
+instead of PyPI, whose Windows wheels are CPU-only: `cu130` for driver
+CUDA 13.0+ on a Turing (GTX 16xx / RTX 20xx) or newer GPU, otherwise
+`cu126` for driver CUDA 12.6+. Re-running it also swaps an existing
+CPU-only PyTorch in `.venv` for the CUDA build, so after a driver update
+just run `setup.bat` again. It finishes by printing whether CUDA is
+available. See [`setup.bat`](setup.bat) for what
 it does step by step — it's a thin wrapper around the manual steps
 below, safe to re-run.
 
@@ -278,7 +287,10 @@ inference time, since only training speed is affected.
 - **Slow inference / CUDA errors** — `DEVICE = "cuda"` requires an
   NVIDIA GPU and a matching PyTorch build; confirm your driver with
   `nvidia-smi` first, since an old driver can silently fall back to CPU
-  or error out. Switch `DEVICE` to `"cpu"` in `config.py` if you don't
+  or error out. Check what the venv actually has with
+  `.venv\Scripts\python -c "import torch; print(torch.__version__, torch.cuda.is_available())"` -
+  a `+cpu` version means a CPU-only build, which re-running `setup.bat`
+  replaces with the CUDA one. Switch `DEVICE` to `"cpu"` in `config.py` if you don't
   have a GPU available; YOLO26 is designed for real-time CPU-only
   inference, though the smaller `yolo26n.pt` will run faster than the
   `yolo26s.pt` base this project trains on if CPU speed becomes a
