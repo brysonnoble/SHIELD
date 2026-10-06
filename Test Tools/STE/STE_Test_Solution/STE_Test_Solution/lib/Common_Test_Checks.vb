@@ -270,4 +270,122 @@ Public Module Common_Test_Checks
             Pass()
         End If
     End Sub
+
+    ' Collects every "target id=<n> class=<className> ... pos=(<x>,<y>)"
+    ' line printed since an OutputMark(), over the next durationSeconds, and
+    ' returns each track ID's smoothed pixel positions in the order they
+    ' were printed. Empty if that class was never detected in the window.
+    ' A durationSeconds of 0 reads what has already been printed without
+    ' waiting - for a second check over a window an earlier check already
+    ' waited out (same sinceLine).
+    Public Function TrackPositionsOverWindowSince(className As String, durationSeconds As Double, sinceLine As Integer) As Dictionary(Of Integer, List(Of (X As Double, Y As Double)))
+        Dim regex As New Regex($"target id=(\d+) class={Regex.Escape(className)}\b.*?pos=\((-?[\d.]+),(-?[\d.]+)\)")
+        Dim tracks As New Dictionary(Of Integer, List(Of (X As Double, Y As Double)))
+        Dim deadline As DateTime = DateTime.Now.AddSeconds(durationSeconds)
+        Dim checkedUpTo As Integer = sinceLine
+        Do
+            Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
+            For i As Integer = checkedUpTo To lines.Length - 1
+                Dim m As Match = regex.Match(lines(i))
+                If m.Success Then
+                    Dim id As Integer = Integer.Parse(m.Groups(1).Value, CultureInfo.InvariantCulture)
+                    If Not tracks.ContainsKey(id) Then
+                        tracks(id) = New List(Of (X As Double, Y As Double))
+                    End If
+                    tracks(id).Add((Double.Parse(m.Groups(2).Value, CultureInfo.InvariantCulture),
+                                    Double.Parse(m.Groups(3).Value, CultureInfo.InvariantCulture)))
+                End If
+            Next
+            checkedUpTo = Math.Max(checkedUpTo, lines.Length)
+            If DateTime.Now >= deadline Then
+                Exit Do
+            End If
+            Thread.Sleep(200)
+        Loop
+        Return tracks
+    End Function
+
+    ' AVS-02 (track): fails unless exactly expectedCount distinct track IDs
+    ' of className are reported over the next durationSeconds. One target
+    ' that drops out and is re-acquired under a new ID counts twice, so with
+    ' sinceLine taken before the spawn this also checks that each target
+    ' kept a single ID for the whole window.
+    Public Sub AssertTrackCountSince(className As String, expectedCount As Integer, durationSeconds As Double, sinceLine As Integer)
+        Dim tracks = TrackPositionsOverWindowSince(className, durationSeconds, sinceLine)
+        If tracks.Count <> expectedCount Then
+            Fail($"{expectedCount} track ID(s)", $"{tracks.Count} ({String.Join(", ", tracks.Keys)})")
+        Else
+            Pass()
+        End If
+    End Sub
+
+    ' AVS-02 (track): fails if any track ID's position jumps more than
+    ' maxJumpPixels between two consecutive reports over the next
+    ' durationSeconds - i.e. the ID was handed from one target to another
+    ' (an ID swap) rather than following the same target. Choose
+    ' maxJumpPixels well under the pixel spacing between the targets in the
+    ' scene but well over how far one target moves between frames. Fails
+    ' with "no detections" if className is never reported.
+    Public Sub AssertNoTrackJumpsSince(className As String, maxJumpPixels As Double, durationSeconds As Double, sinceLine As Integer)
+        Dim tracks = TrackPositionsOverWindowSince(className, durationSeconds, sinceLine)
+        If tracks.Count = 0 Then
+            Fail($"jumps <= {maxJumpPixels} px", "no detections")
+            Return
+        End If
+        For Each track In tracks
+            For i As Integer = 1 To track.Value.Count - 1
+                Dim a = track.Value(i - 1)
+                Dim b = track.Value(i)
+                Dim jump As Double = Math.Sqrt((b.X - a.X) ^ 2 + (b.Y - a.Y) ^ 2)
+                If jump > maxJumpPixels Then
+                    Fail($"jumps <= {maxJumpPixels} px", $"track {track.Key} jumped {jump:F0} px from ({a.X:F0},{a.Y:F0}) to ({b.X:F0},{b.Y:F0})")
+                    Return
+                End If
+            Next
+        Next
+        Pass()
+    End Sub
+
+    ' AVS-03: fails if className goes unreported for longer than
+    ' maxGapSeconds at any point over the next durationSeconds, counting
+    ' from when this is called. The detector only reports targets at or
+    ' above config.CONFIDENCE_THRESHOLD (0.25), so a target whose
+    ' confidence dips below the floor drops out of the output entirely -
+    ' this gap, not a low "conf=" reading, is how such a dip shows up.
+    ' Call it once the target is already being reported (e.g. right after
+    ' AssertTargetDetectedSince()), or the time to first acquisition counts
+    ' as a gap. Always waits out the full window.
+    Public Sub AssertTargetContinuouslyDetectedSince(className As String, maxGapSeconds As Double, durationSeconds As Double, sinceLine As Integer)
+        Dim regex As New Regex($"class={Regex.Escape(className)}\b")
+        Dim start As DateTime = DateTime.Now
+        Dim deadline As DateTime = start.AddSeconds(durationSeconds)
+        Dim lastSeen As DateTime = start
+        Dim longestGap As Double = 0
+        Dim checkedUpTo As Integer = sinceLine
+        Do
+            Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
+            Dim now As DateTime = DateTime.Now
+            Dim seen As Boolean = False
+            For i As Integer = checkedUpTo To lines.Length - 1
+                If regex.IsMatch(lines(i)) Then
+                    seen = True
+                    Exit For
+                End If
+            Next
+            checkedUpTo = Math.Max(checkedUpTo, lines.Length)
+            longestGap = Math.Max(longestGap, (now - lastSeen).TotalSeconds)
+            If seen Then
+                lastSeen = now
+            End If
+            If now >= deadline Then
+                Exit Do
+            End If
+            Thread.Sleep(200)
+        Loop
+        If longestGap > maxGapSeconds Then
+            Fail($"no gap > {maxGapSeconds} s", $"{className} unreported for {longestGap:F1} s")
+        Else
+            Pass()
+        End If
+    End Sub
 End Module

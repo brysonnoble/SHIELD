@@ -1,11 +1,25 @@
 Imports System
 
 Module AVS_Detection_Test
+    ' Shared by every range sweep (TC01, TC03)
+    Private ReadOnly DetectionRangesMeters   As Double() = {1, 5, 10, 15, 20}
+    Private ReadOnly SweepOffsets()          As (X As Double, Y As Double) = {
+        (0.0, 0.0),
+        (0.25, 0.15),
+        (-0.2, -0.3)
+    }
+    Private Const DetectionTimeoutSeconds As Double = 10
+    Private Const ConfidenceWindowSeconds As Double = 3
+    Private Const MinimumConfidence       As Double = 0.25
+    Private Const EmptySceneWindowSeconds As Double = 3
+    Private Const DespawnSettleSeconds    As Double = 2
+
     Sub Main()
         Try
             BeginTest()
             RunTestCase(AddressOf TC01)
             RunTestCase(AddressOf TC02)
+            RunTestCase(AddressOf TC03)
         Finally
             EndTest()
         End Try
@@ -19,7 +33,7 @@ Module AVS_Detection_Test
         ' ---------------------------------------------------------------------
         TraceTo("AVS-02")
         ' AVS-02: The drone shall recognize and track a target with a
-        ' presented cross-sectional area of 0.25 m^2.
+        ' minimum span of 0.25 m.
         ' ---------------------------------------------------------------------
         TraceTo("AVS-03")
         ' AVS-03: The drone shall maintain at least 25 percent confidence
@@ -30,39 +44,12 @@ Module AVS_Detection_Test
         ' detect its target​.
         ' =====================================================================
 
-        Dim DetectionRangesMeters   As Double() = {1, 5, 10, 15, 20}
-        Dim SweepOffsets()          As (X As Double, Y As Double) = {
-            (0.0, 0.0),
-            (0.25, 0.15),
-            (-0.2, -0.3)
-        }
-        Dim DetectionTimeoutSeconds As Double = 10
-        Dim ConfidenceWindowSeconds As Double = 3
-        Dim MinimumConfidence       As Double = 0.25
-        Dim EmptySceneWindowSeconds As Double = 3
-        Dim DespawnSettleSeconds As Double = 2
-
         ' No drones have been spawned yet
         WriteLog("Empty scene: checking for false positives before any spawn")
         AssertNoTargetDetectedSince("drone", EmptySceneWindowSeconds, OutputMark())
 
         ' Spawn drones at various ranges and offsets
-        For sweep As Integer = 0 To SweepOffsets.Length - 1
-            Dim offset = SweepOffsets(sweep)
-            For Each rangeMeters As Double In DetectionRangesMeters
-                WriteLog($"Sweep {sweep + 1}/{SweepOffsets.Length}: drone at {rangeMeters} m")
-                Dim mark As Integer = OutputMark()
-                InstDroneAtRange(DroneType.Quad, rangeMeters, offset.X, offset.Y)
-                AssertTargetDetectedSince("drone", DetectionTimeoutSeconds, mark)                           ' AVS-01, AVS-02, SYS-03
-                AssertMinConfidenceAtLeastSince("drone", MinimumConfidence, ConfidenceWindowSeconds, mark)  ' AVS-03
-                DespawnAllDrones()
-                Wait(DespawnSettleSeconds)
-            Next
-
-            ' Check for false positives after the sweep
-            WriteLog($"Empty scene: checking for false positives after sweep {sweep + 1}/{SweepOffsets.Length}")
-            AssertNoTargetDetectedSince("drone", EmptySceneWindowSeconds, OutputMark())
-        Next
+        RangeSweep(DroneType.Quad, "Day")
     End Sub
 
     Sub TC02()
@@ -99,11 +86,61 @@ Module AVS_Detection_Test
         Next
     End Sub
 
-    Private Sub InstDroneAtRange(droneType As DroneType, rangeMeters As Double, offX As Double, offY As Double)
-        Dim length As Double = Math.Sqrt(offX * offX + offY * offY + 1)
-        InstDrone(droneType,
-                  rangeMeters * offX / length,
-                  rangeMeters * offY / length,
-                  rangeMeters / length)
+    Sub TC03()
+        ' =====================================================================
+        TraceTo("AVS-01")
+        ' AVS-01: The drone shall be capable of detecting a target within 20
+        ' meters.
+        ' ---------------------------------------------------------------------
+        TraceTo("AVS-02")
+        ' AVS-02: The drone shall recognize and track a target with a
+        ' minimum span of 0.25 m.
+        ' ---------------------------------------------------------------------
+        TraceTo("AVS-03")
+        ' AVS-03: The drone shall maintain at least 25 percent confidence
+        ' while en route to the target.
+        ' =====================================================================
+
+        Dim EnvironmentSettleSeconds As Double = 2
+        Dim DayAirframes As DroneType() = {DroneType.Toad, DroneType.BumbleBee}
+
+        ' Repeat TC01's sweep at night
+        WriteLog("Switching to the night skybox")
+        EditVirtualEnvironment(VirtualEnvironment.Night)
+        Wait(EnvironmentSettleSeconds)
+        WriteLog("Empty scene (Night): checking for false positives before any spawn")
+        AssertNoTargetDetectedSince("drone", EmptySceneWindowSeconds, OutputMark())
+        RangeSweep(DroneType.Quad, "Night")
+
+        ' Repeat it in daylight with the other two airframes
+        WriteLog("Switching to the day skybox")
+        EditVirtualEnvironment(VirtualEnvironment.Day)
+        Wait(EnvironmentSettleSeconds)
+        For Each airframe As DroneType In DayAirframes
+            RangeSweep(airframe, "Day")
+        Next
+    End Sub
+
+    ' TC01's sweep: one drone at a time at each range along each offset,
+    ' checking it's detected and stays above the confidence floor, with an
+    ' empty-scene false-positive check after each offset's sweep. label
+    ' only tags the log lines (e.g. which skybox is up).
+    Private Sub RangeSweep(droneType As DroneType, label As String)
+        For sweep As Integer = 0 To SweepOffsets.Length - 1
+            Dim offset = SweepOffsets(sweep)
+            For Each rangeMeters As Double In DetectionRangesMeters
+                WriteLog($"Sweep {sweep + 1}/{SweepOffsets.Length} ({droneType}, {label}): drone at {rangeMeters} m")
+                Dim mark As Integer = OutputMark()
+                InstDroneAtRange(droneType, rangeMeters, offset.X, offset.Y)
+                AssertTargetDetectedSince("drone", DetectionTimeoutSeconds, mark)                           ' AVS-01, AVS-02, SYS-03
+                AssertMinConfidenceAtLeastSince("drone", MinimumConfidence, ConfidenceWindowSeconds, mark)  ' AVS-03
+                DespawnAllDrones()
+                Wait(DespawnSettleSeconds)
+            Next
+
+            ' Check for false positives after the sweep
+            WriteLog($"Empty scene ({label}): checking for false positives after sweep {sweep + 1}/{SweepOffsets.Length}")
+            AssertNoTargetDetectedSince("drone", EmptySceneWindowSeconds, OutputMark())
+        Next
     End Sub
 End Module

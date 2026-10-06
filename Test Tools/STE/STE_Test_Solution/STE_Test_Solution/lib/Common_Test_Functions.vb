@@ -513,6 +513,55 @@ Public Module Common_Test_Functions
         SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, command)
     End Sub
 
+    ' InstDrone() placed by where the drone appears in the camera's view
+    ' rather than by world coordinates: rangeMeters straight-line distance
+    ' from the camera (at the world origin, looking down +Z), along the ray
+    ' through image offset (offX, offY). Offsets are tangents of the angle
+    ' off the line of sight - (0, 0) is dead center, and the frame edges
+    ' are at offX = +/-FRAME_EDGE_OFFSET_X, offY = +/-FRAME_EDGE_OFFSET_Y.
+    Public Sub InstDroneAtRange(droneType As Common_Test_Variables.DroneType, rangeMeters As Double, offX As Double, offY As Double)
+        Dim p = PointAtRange(rangeMeters, offX, offY)
+        InstDrone(droneType, p.X, p.Y, p.Z)
+    End Sub
+
+    ' Moving version of the above: the drone spawns at one range/offset and
+    ' flies to another at speedMps (see the moving InstDrone() overload).
+    Public Sub InstDroneAtRange(droneType As Common_Test_Variables.DroneType,
+                                startRangeMeters As Double, startOffX As Double, startOffY As Double,
+                                endRangeMeters As Double, endOffX As Double, endOffY As Double,
+                                speedMps As Double)
+        Dim startPoint = PointAtRange(startRangeMeters, startOffX, startOffY)
+        Dim endPoint = PointAtRange(endRangeMeters, endOffX, endOffY)
+        InstDrone(droneType, startPoint.X, startPoint.Y, startPoint.Z, endPoint.X, endPoint.Y, endPoint.Z, speedMps)
+    End Sub
+
+    ' Straight-line distance between the start and end points of a moving
+    ' InstDroneAtRange() call - pass to EstimatedFlightSeconds().
+    Public Function FlightDistanceAtRange(startRangeMeters As Double, startOffX As Double, startOffY As Double,
+                                          endRangeMeters As Double, endOffX As Double, endOffY As Double) As Double
+        Dim a = PointAtRange(startRangeMeters, startOffX, startOffY)
+        Dim b = PointAtRange(endRangeMeters, endOffX, endOffY)
+        Return Math.Sqrt((b.X - a.X) ^ 2 + (b.Y - a.Y) ^ 2 + (b.Z - a.Z) ^ 2)
+    End Function
+
+    ' Roughly how long a moving drone takes to cover distanceMeters at
+    ' speedMps: DroneAutopilot.cs ramps its speed up and back down at
+    ' DRONE_MAX_ACCELERATION, which adds speedMps / DRONE_MAX_ACCELERATION
+    ' to the cruise time (or, on a leg too short to reach cruise speed,
+    ' accelerates for half of it and brakes for the other half). Use it to
+    ' size a check's window to cover a whole flight.
+    Public Function EstimatedFlightSeconds(distanceMeters As Double, speedMps As Double) As Double
+        If distanceMeters >= speedMps * speedMps / DRONE_MAX_ACCELERATION Then
+            Return distanceMeters / speedMps + speedMps / DRONE_MAX_ACCELERATION
+        End If
+        Return 2 * Math.Sqrt(distanceMeters / DRONE_MAX_ACCELERATION)
+    End Function
+
+    Private Function PointAtRange(rangeMeters As Double, offX As Double, offY As Double) As (X As Double, Y As Double, Z As Double)
+        Dim length As Double = Math.Sqrt(offX * offX + offY * offY + 1)
+        Return (rangeMeters * offX / length, rangeMeters * offY / length, rangeMeters / length)
+    End Function
+
     ' Sends a command over TCP to the Unity scene to destroy every drone
     ' InstDrone() has spawned so far (DroneSpawner.cs's DespawnAll()).
     Public Sub DespawnAllDrones()
