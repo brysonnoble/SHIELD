@@ -194,7 +194,7 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | Setting | Purpose |
 |---|---|
 | `MODEL_PATH` | YOLO weights file. |
-| `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.05) - not an engagement gate. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
+| `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.25) - not an engagement gate, but nothing below it is ever reported, so a target whose confidence dips under it drops out of the output. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
 | `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
 | `DUPLICATE_BOX_CONTAINMENT` / `DUPLICATE_BOX_CENTER_OFFSET` | When a lower-confidence box of the same class counts as a duplicate of another and is dropped before tracking: how much of the smaller box must lie inside the other, and how close (as a fraction of the larger box) their centers must be. |
