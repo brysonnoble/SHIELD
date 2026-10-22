@@ -28,12 +28,12 @@ Public Module Common_Test_Variables
     Public Const UNITY_CAMERA_PORT As Integer = 5558
 
     ' Where the frame edges sit in InstDroneAtRange()'s offset units (the
-    ' tangent of the angle off the line of sight). Must match the scene's
-    ' Main Camera - a 60 degree vertical field of view, so tan(30 deg) - and
-    ' the player's 16:9 window (ProjectSettings' 1920x1080 default), which
-    ' widens the horizontal edge by 16/9.
-    Public ReadOnly FRAME_EDGE_OFFSET_Y As Double = Math.Tan(30 * Math.PI / 180)
-    Public ReadOnly FRAME_EDGE_OFFSET_X As Double = FRAME_EDGE_OFFSET_Y * 16 / 9
+    ' tangent of the angle off the line of sight). Must match the frames
+    ' CameraStreamer.cs streams - the e-CAM25_CUONX sensor it emulates: a
+    ' 61.6 degree vertical field of view, so tan(30.8 deg), on a 1920x1200
+    ' (16:10) image, which widens the horizontal edge by 16/10.
+    Public ReadOnly FRAME_EDGE_OFFSET_Y As Double = Math.Tan(30.8 * Math.PI / 180)
+    Public ReadOnly FRAME_EDGE_OFFSET_X As Double = FRAME_EDGE_OFFSET_Y * 16 / 10
 
     ' Must match DroneAutopilot.cs's maxAcceleration (m/s^2) - see
     ' Common_Test_Functions.EstimatedFlightSeconds().

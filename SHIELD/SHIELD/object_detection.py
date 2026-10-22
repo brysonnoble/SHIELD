@@ -1,9 +1,12 @@
 # Detection + tracking pipeline: Ultralytics YOLO for detection, its
 # bundled ByteTrack for persistent IDs, and a per-track OpenCV Kalman
 # filter for smoothing/prediction, matching the architecture in the
-# SHIELD Software Stack Summary.
+# SHIELD Software Stack Summary. When the source is a stereo pair, each
+# target is also located in 3D (range and relative position, meters) by
+# stereo matching - see stereo_ranging.py.
 
 from dataclasses import dataclass
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -13,6 +16,7 @@ from ultralytics.utils import YAML, IterableSimpleNamespace
 from ultralytics.utils.checks import check_yaml
 
 import config
+from stereo_ranging import StereoRanger
 
 
 @dataclass
@@ -23,6 +27,11 @@ class Detection:
     bbox: tuple  # raw (x1, y1, x2, y2) from the detector
     smoothed_center: tuple  # Kalman-filtered (cx, cy)
     smoothed_bbox: tuple  # bbox re-centered on the smoothed center
+    # Smoothed (right, up, forward) meters from the left/reference camera,
+    # and its length. None for a mono source or a target that hasn't
+    # been stereo-matched yet.
+    position_m: Optional[tuple] = None
+    distance_m: Optional[float] = None
 
 
 class _CentroidKalmanFilter:
@@ -54,6 +63,18 @@ class _CentroidKalmanFilter:
         self.kf.errorCovPre = initial_cov.copy()
         self.kf.errorCovPost = initial_cov.copy()
         self.age_since_seen = 0
+        self.position_m = None  # exponentially smoothed, see update_position
+
+    def update_position(self, raw_m, alpha):
+        """Blends a new (right, up, forward) stereo fix into the smoothed
+        position. A frame without a fix keeps the last one."""
+        if raw_m is not None:
+            raw_m = np.asarray(raw_m, dtype=float)
+            if self.position_m is None:
+                self.position_m = raw_m
+            else:
+                self.position_m = self.position_m + alpha * (raw_m - self.position_m)
+        return self.position_m
 
     def predict(self):
         state = self.kf.predict()
@@ -77,6 +98,7 @@ class SHIELDDetector:
         max_track_age=config.TRACK_MAX_AGE,
         duplicate_containment=config.DUPLICATE_BOX_CONTAINMENT,
         duplicate_center_offset=config.DUPLICATE_BOX_CENTER_OFFSET,
+        range_smoothing=config.STEREO_RANGE_SMOOTHING,
     ):
         self.model = YOLO(model_path)
         self.device = device
@@ -84,6 +106,8 @@ class SHIELDDetector:
         self.max_track_age = max_track_age
         self.duplicate_containment = duplicate_containment
         self.duplicate_center_offset = duplicate_center_offset
+        self.range_smoothing = range_smoothing
+        self._ranger = StereoRanger()
         self._class_ids = self._resolve_class_ids(class_filter)
         self._trackers = {}  # track_id -> _CentroidKalmanFilter
         # ByteTrack is run here rather than through model.track(), so that
@@ -99,7 +123,10 @@ class SHIELDDetector:
         name_to_id = {name: idx for idx, name in self.model.names.items()}
         return [name_to_id[name] for name in class_filter if name in name_to_id]
 
-    def process_frame(self, frame):
+    def process_frame(self, frame, stereo=None):
+        """frame: the left (reference) camera's BGR image. stereo: the
+        matching stereo_ranging.StereoFrame for a stereo source, else None
+        (no ranging)."""
         results = self.model.predict(
             frame,
             conf=self.confidence_threshold,
@@ -120,8 +147,9 @@ class SHIELDDetector:
             ids = tracks[:, 4].astype(int)
             confs = tracks[:, 5]
             classes = tracks[:, 6].astype(int)
+            positions = self._ranger.locate(frame, stereo, xyxy)
 
-            for box, track_id, conf, cls_id in zip(xyxy, ids, confs, classes):
+            for box, track_id, conf, cls_id, raw_position in zip(xyxy, ids, confs, classes, positions):
                 x1, y1, x2, y2 = box
                 cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
                 w, h = x2 - x1, y2 - y1
@@ -133,6 +161,7 @@ class SHIELDDetector:
                 else:
                     tracker.predict()
                 scx, scy = tracker.correct(cx, cy)
+                position_m = tracker.update_position(raw_position, self.range_smoothing)
 
                 detections.append(
                     Detection(
@@ -142,6 +171,8 @@ class SHIELDDetector:
                         bbox=(float(x1), float(y1), float(x2), float(y2)),
                         smoothed_center=(scx, scy),
                         smoothed_bbox=(scx - w / 2, scy - h / 2, scx + w / 2, scy + h / 2),
+                        position_m=None if position_m is None else tuple(float(v) for v in position_m),
+                        distance_m=None if position_m is None else float(np.linalg.norm(position_m)),
                     )
                 )
                 seen_ids.add(track_id)
@@ -208,6 +239,8 @@ class SHIELDDetector:
             cv2.circle(annotated, (int(scx), int(scy)), 4, (0, 0, 255), -1)
 
             label = f"ID {det.track_id} {det.class_name} {det.confidence:.2f}"
+            if det.distance_m is not None:
+                label += f" {det.distance_m:.1f}m"
             cv2.putText(
                 annotated, label, (x1, max(0, y1 - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA,

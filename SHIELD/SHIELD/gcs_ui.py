@@ -105,6 +105,8 @@ def _draw_hud(frame, detections, engaged_id=None):
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 1, cv2.LINE_AA)
 
         label = f"T-{det.track_id:02d} {det.confidence:.2f}"
+        if det.distance_m is not None:
+            label += f" {det.distance_m:.1f}m"
         cv2.putText(
             annotated, label, (x1, max(10, y1 - 6)),
             cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA,
@@ -403,8 +405,9 @@ class SHIELDGCSWindow:
             )
             left.pack(side="left")
             status = "live" if live else "coasting"
+            range_text = f"{det.distance_m:.1f} m · " if det.distance_m is not None else ""
             right = tk.Label(
-                row, text=f"{det.confidence * 100:.0f}% · {status}",
+                row, text=f"{range_text}{det.confidence * 100:.0f}% · {status}",
                 bg=row["bg"], fg=GREEN_BRIGHT if selected else TEXT_MUTED,
                 font=(FONT, 10), anchor="e", padx=10, pady=6,
             )

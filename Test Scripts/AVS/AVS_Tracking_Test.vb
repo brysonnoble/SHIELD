@@ -18,8 +18,8 @@ Module AVS_Tracking_Test
         ' minimum span of 0.25 m.
         ' =====================================================================
 
-        ' Targets sit at least 0.3 apart in offset units, about 280 px in a
-        ' 1920x1080 frame; a drone at 2 m/s and 12 m moves about 5 px per
+        ' Targets sit at least 0.3 apart in offset units, about 300 px in the
+        ' 1920x1200 frame; a drone at 2 m/s and 12 m moves about 6 px per
         ' frame, so a jump over MaxJumpPixels means an ID changed hands
         ' between targets.
         Dim TargetRangeMeters    As Double = 12
