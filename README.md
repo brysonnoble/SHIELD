@@ -299,8 +299,10 @@ real-photo, one synthetic) plus one balloon source:
   Universe and Hugging Face (including the Pawełczyk & Wojtyra
   real-world quadcopter set) with exact and near-duplicates removed.
   Its card notes some marketing and computer-generated images are
-  mixed in. Unzips to `datasets/seraphim_raw/{train,test}/{images,labels}/`.
-  License: CC BY 4.0.
+  mixed in. Łukasz Grzybowski, Seraphim Defence Systems, 2025. Download
+  with `hf download lgrzybowski/seraphim-drone-detection-dataset --repo-type dataset`,
+  then unzip each `train/` and `test/` `batch_*.zip` into
+  `datasets/seraphim_raw/{train,test}/{images,labels}/`. License: CC BY 4.0.
 - [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav)
   (1,359 images) and [Drone YOLO Detection](https://www.kaggle.com/datasets/sshikamaru/drone-yolo-detection)
   (~4,010 images) — the original two Kaggle drone sources
@@ -323,7 +325,7 @@ real-photo, one synthetic) plus one balloon source:
   rather than hand-labeled. Fills the sim-domain gap (day/night, camera
   roll, multi-drone frames) the real-photo sources lack.
 - [DUT Anti-UAV](https://github.com/wangdongdut/DUT-Anti-UAV) (detection
-  set), Zhao et al., "Vision-based Anti-UAV Detection and Tracking",
+  set), Zhao et al., ["Vision-based Anti-UAV Detection and Tracking"](https://arxiv.org/abs/2205.10851),
   IEEE T-ITS 2022. 10,000 visible-light images (all three official
   splits are used), ~10,100 boxes of class `UAV`, Pascal VOC XML. Mostly
   small drones against sky, buildings and trees. Google Drive downloads
@@ -351,32 +353,6 @@ real-photo, one synthetic) plus one balloon source:
 Adjacent frames of one video are near-duplicates, and the
 random train/val split can put them on both sides, so val scores on
 the Det-Fly and Halmstad parts will read a little optimistic.
-
-Two larger drone sets are also downloaded under `datasets/`. They are
-not yet merged by `prepare_combined_dataset.py`:
-- [Seraphim Drone Detection Dataset](https://huggingface.co/datasets/lgrzybowski/seraphim-drone-detection-dataset),
-  Łukasz Grzybowski, Seraphim Defence Systems, 2025
-  (`datasets/seraphim_yolo/{train,test}/{images,labels}/`). 83,483
-  single-class (`drone`) images (75,134 train / 8,349 test), resized
-  and padded to 640x640, YOLO-format annotations. Curated from 23
-  open-source datasets, and the labels were not hand-rechecked. It
-  already contains both Kaggle drone sets above, so don't merge it
-  with them, or the same images can land in both train and val.
-  License: CC BY 4.0.
-  Download: `hf download lgrzybowski/seraphim-drone-detection-dataset --repo-type dataset`,
-  then unzip each `train/` and `test/` `batch_*.zip`.
-- [DUT Anti-UAV](https://github.com/wangdongdut/DUT-Anti-UAV)
-  (detection subset), from J. Zhao, J. Zhang, D. Li, and D. Wang,
-  ["Vision-based Anti-UAV Detection and Tracking,"](https://arxiv.org/abs/2205.10851)
-  *IEEE Transactions on Intelligent Transportation Systems*, 2022
-  (`datasets/dut_anti_uav/{train,val,test}/{images,labels}/`). 10,000
-  visible-light images (5,200 train / 2,600 val / 2,200 test) with
-  10,108 boxes. They cover many UAV types, from small to tiny targets,
-  against cluttered sky and ground backgrounds. The original Pascal VOC
-  XML files are kept in `xml/`, and the `labels/` folder holds YOLO
-  conversions (class 0 = `drone`). The repository states no license,
-  so cite the paper above and treat the data as academic-use only.
-  Download: the Google Drive train/val/test links in the GitHub README.
 
 **Compute:** training device is independent of inference device — a
 model trained on GPU runs identically on the Orin Nano's onboard GPU at
