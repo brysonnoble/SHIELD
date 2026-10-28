@@ -5,12 +5,19 @@
 import socket
 import struct
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
 
+from stereo_ranging import StereoFrame
+
 
 class VideoSource:
+    # The right camera's image (a stereo_ranging.StereoFrame) for the frame
+    # read() last returned, or None for a mono source.
+    last_stereo = None
+
     def open(self, on_wait=None):
         """on_wait: optional callback a subclass with a connect-retry loop
         can invoke periodically instead of blocking outright (e.g. so a
@@ -84,21 +91,37 @@ def _recv_exact(sock, num_bytes):
     return bytes(buf)
 
 
+def _decode_jpeg(data):
+    return cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+
 class UnityStreamSource(VideoSource):
     """Connects to the CameraStreamer.cs TCP server running inside the
     Unity Editor (Play Mode) or a Unity player build, and decodes the
     length-prefixed JPEG frames it sends.
 
     Pull-based protocol: send a single request byte, then read back a
-    4-byte big-endian length followed by that many JPEG bytes. Frames are
-    only sent on request, so a slow reader can't cause stale frames to
+    4-byte big-endian length followed by that many payload bytes. Frames
+    are only sent on request, so a slow reader can't cause stale frames to
     back up in the socket buffer - read() always returns the newest frame
     Unity captured after the request was made.
+
+    Request 0x01 asks for a mono frame: the payload is one JPEG from the
+    left (reference) camera. Request 0x02 asks for a stereo pair: the
+    payload is _STEREO_MAGIC, float32 baseline (m), float32 focal length
+    (px), then the left and right JPEGs, each prefixed with its uint32
+    length (all big-endian). A Unity build without the stereo rig answers
+    0x02 with a mono frame, which read() accepts too.
     """
 
-    def __init__(self, host, port, connect_retries=15, retry_delay=1.0, read_timeout=2.0):
+    _MONO_REQUEST = b"\x01"
+    _STEREO_REQUEST = b"\x02"
+    _STEREO_MAGIC = b"SHST"
+
+    def __init__(self, host, port, connect_retries=15, retry_delay=1.0, read_timeout=2.0, stereo=True):
         self.host = host
         self.port = port
+        self.stereo = stereo
         self.connect_retries = connect_retries
         self.retry_delay = retry_delay
         # AVS.05.01: no dedicated heartbeat message exists on the wire yet,
@@ -111,6 +134,9 @@ class UnityStreamSource(VideoSource):
         # window, since nothing pumps Tk while blocked in recv()).
         self.read_timeout = read_timeout
         self._sock = None
+        # Decodes the right image while the left decodes on the caller's
+        # thread - cv2.imdecode releases the GIL, so the two overlap.
+        self._decoder = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stereo-decode")
 
     def open(self, on_wait=None):
         last_error = None
@@ -153,10 +179,12 @@ class UnityStreamSource(VideoSource):
         return False
 
     def read(self):
+        self.last_stereo = None
         if self._sock is None:
             return None
         try:
-            self._sock.sendall(b"\x01")  # request the next frame
+            # Request the next frame.
+            self._sock.sendall(self._STEREO_REQUEST if self.stereo else self._MONO_REQUEST)
             header = _recv_exact(self._sock, 4)
             if header is None:
                 return None
@@ -164,7 +192,23 @@ class UnityStreamSource(VideoSource):
             payload = _recv_exact(self._sock, length)
             if payload is None:
                 return None
-            return cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if not payload.startswith(self._STEREO_MAGIC):
+                return _decode_jpeg(payload)
+
+            baseline_m, focal_px = struct.unpack_from(">ff", payload, 4)
+            offset = 12
+            jpegs = []
+            for _ in range(2):
+                (size,) = struct.unpack_from(">I", payload, offset)
+                offset += 4
+                jpegs.append(payload[offset:offset + size])
+                offset += size
+            right_future = self._decoder.submit(_decode_jpeg, jpegs[1])
+            left = _decode_jpeg(jpegs[0])
+            right = right_future.result()
+            if left is not None and right is not None:
+                self.last_stereo = StereoFrame(right=right, baseline_m=baseline_m, focal_px=focal_px)
+            return left
         except OSError as exc:
             # e.g. WinError 10054: Unity closed the connection mid-stream
             # (Play Mode stopped, script recompile, etc). Treat like EOF
@@ -173,6 +217,8 @@ class UnityStreamSource(VideoSource):
             return None
 
     def release(self):
+        # The decoder thread is kept: __main__.py reconnects by release() then
+        # open() on the same source.
         if self._sock is not None:
             try:
                 self._sock.close()

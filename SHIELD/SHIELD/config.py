@@ -1,6 +1,6 @@
 # Central configuration for the SHIELD detect/track pipeline.
 # Values here are shared between emulation (PC) and, eventually, hardware
-# (NVIDIA Jetson Orin Nano + e-CAM25_CUNOX) runs.
+# (NVIDIA Jetson Orin Nano + a stereo pair of e-CAM25_CUONX) runs.
 
 # --- Model ---
 # Custom YOLO fine-tuned on a drone+balloon dataset (see "Custom
@@ -21,6 +21,34 @@ CONFIDENCE_THRESHOLD = 0.25
 # useful as a low-stakes tracking-practice target, not an engagement
 # target) without retraining or touching the model itself.
 CLASS_FILTER = None
+
+# --- Stereo ranging ---
+# Each target's range and relative position come from a stereo pair of
+# e-CAM25_CUONX cameras (see stereo_ranging.py). The baseline and focal
+# length arrive with every stereo frame (the Unity virtual camera sends
+# its own; on hardware they'll come from the pair's calibration), so
+# only matching settings live here.
+# Ask the Unity virtual camera for stereo frames. Off = mono frames and
+# no ranging, e.g. to compare against a build without the stereo rig.
+STEREO_ENABLED = True
+
+# Nearest range searched for. Sets the widest disparity searched
+# (f * B / this), so lowering it costs matching time on every target.
+STEREO_MIN_RANGE_M = 1.0
+
+# Minimum normalized cross-correlation (-1..1) between the target's box
+# in the left image and its best match in the right before a range is
+# trusted. Below it the frame gives no fix and the last one is kept.
+STEREO_MIN_MATCH_SCORE = 0.6
+
+# Disparities below this many pixels are reported as no fix: range error
+# grows as 1/d^2, so a sub-pixel shift is too far away to range usefully.
+# 1 px is ~200 m with the default 20 cm baseline.
+STEREO_MIN_DISPARITY_PX = 1.0
+
+# Per-track exponential smoothing of position (0 = frozen, 1 = no
+# smoothing).
+STEREO_RANGE_SMOOTHING = 0.3
 
 # ByteTrack, bundled with ultralytics.
 TRACKER_CONFIG = "bytetrack.yaml"

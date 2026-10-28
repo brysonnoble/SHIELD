@@ -21,8 +21,8 @@ The project spans two disciplines: AEE builds the airframe, propulsion,
 and interception mechanism; SWE (this repo) builds the perception and
 autonomy stack — detection, tracking, and the decision logic that hands
 off between autonomous and manually-overridden engagement. The target
-hardware is an **NVIDIA Jetson Orin Nano + e-CAM25_CUNOX (AR0234 global
-shutter camera)** mounted on the drone, running the same Python pipeline
+hardware is an **NVIDIA Jetson Orin Nano + a stereo pair of e-CAM25_CUONX
+(AR0234 global shutter) cameras** mounted on the drone, running the same Python pipeline
 that this repo lets you build and test on a Windows PC first, using
 Unity as a stand-in camera feed instead of the physical camera.
 
@@ -53,7 +53,7 @@ through detection/tracking, the custom drone/balloon model, and
 emulation-level interception) run September–November 2026; a second
 semester of hardware integration and final demo follows in spring 2027.
 Only the `Emulation` platform mode (PC-based, Unity or webcam camera
-feed) is implemented today — `Hardware` (Jetson Orin Nano + e-CAM25_CUNOX)
+feed) is implemented today — `Hardware` (Jetson Orin Nano + e-CAM25_CUONX pair)
 and `Prototype` modes are reserved for later milestones. See
 [Known limitations](#known-limitations) below and the itemized milestone
 tasks in the [project plan](#team--project-links).
@@ -62,7 +62,8 @@ tasks in the [project plan](#team--project-links).
 
 ```
 Unity "SHIELD Virtual Camera"  --TCP/JPEG-->  Python pipeline
-  (or a real webcam / video file)                  |
+  (stereo pair: left + right;                      |
+   or a mono webcam / video file)                  |
                                                    v
                                     OpenCV preprocessing
                                                    v
@@ -77,14 +78,50 @@ Unity "SHIELD Virtual Camera"  --TCP/JPEG-->  Python pipeline
                                     Per-track OpenCV Kalman filter
                                     (smoothing + motion prediction)
                                                    v
+                                    Stereo ranging (each box matched
+                                    into the right image -> disparity
+                                    -> range + relative position)
+                                                   v
                                     Target state (id, class, confidence,
-                                    smoothed position) -> console / display
+                                    smoothed position, range, relative
+                                    position) -> console / display
 ```
 
 On the real drone this same Python pipeline runs on the Orin Nano, with
-its onboard GPU accelerating YOLO inference and the e-CAM25_CUNOX as the
-source. Locally, `--source unity` or `--source webcam` stand in for that
-camera.
+its onboard GPU accelerating YOLO inference and the e-CAM25_CUONX pair as
+the source. Locally, `--source unity` stands in for that pair (Unity
+renders both cameras), and `--source webcam` for a single camera without
+ranging.
+
+### Stereo ranging
+
+Detection runs on the left (reference) camera's image only. For each
+tracked box, `stereo_ranging.py` searches the same rows of the right
+image for the best match (normalized cross-correlation, sub-pixel peak)
+and turns the shift between the two, the disparity `d` in pixels, into
+depth and position relative to the left camera:
+
+```
+Z = f * B / d             forward (along the line of sight)
+X = (u - cx) * Z / f      right
+Y = (cy - v) * Z / f      up
+range = sqrt(X^2 + Y^2 + Z^2)
+```
+
+`f` is the focal length in pixels, `B` the baseline between the two
+cameras, and `(u, v)` the box center. Matching only the target's own box,
+rather than computing a full depth map, keeps it well under a millisecond
+per target and keeps the background from deciding the answer.
+
+The Unity virtual camera models the pair on the e-CAM25_CUONX: 1920x1200
+AR0234 sensors with e-con's stock lens (61.6° vertical field of view, so
+`f` ≈ 1006 px), 20 cm apart (`CameraStreamer.cs`'s `baselineMeters`).
+Unity sends `B` and `f` with every stereo frame. Error grows with range
+squared: roughly `range² × matching error / (f × B)`, so about 2-3% at
+20 m for a quarter-pixel matching error. On hardware the pair needs a
+stereo calibration (OpenCV `stereoCalibrate` + `stereoRectify`) to undo
+the wide lens's distortion and align the rows before matching, and
+hardware-synchronized shutters so both images show the same instant.
 
 ## Local emulation setup
 
@@ -196,6 +233,11 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | `MODEL_PATH` | YOLO weights file. |
 | `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.25) - not an engagement gate, but nothing below it is ever reported, so a target whose confidence dips under it drops out of the output. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
 | `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
+| `STEREO_ENABLED` | Ask the Unity virtual camera for stereo frames, giving each target a range (`dist=` in the console, `m` on the HUD and in the target list) and relative position (`rel=(right,up,forward)m` in the console). Off = mono frames, no ranging. |
+| `STEREO_MIN_RANGE_M` | Nearest range searched for; sets the widest disparity searched (`f * B /` this). |
+| `STEREO_MIN_MATCH_SCORE` | Minimum left/right match correlation (-1..1) before a range is trusted; below it the last fix is kept. |
+| `STEREO_MIN_DISPARITY_PX` | Shifts smaller than this are too far away to range (1 px ≈ 200 m at the 20 cm baseline). |
+| `STEREO_RANGE_SMOOTHING` | Per-track exponential smoothing factor for position and range. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
 | `DUPLICATE_BOX_CONTAINMENT` / `DUPLICATE_BOX_CENTER_OFFSET` | When a lower-confidence box of the same class counts as a duplicate of another and is dropped before tracking: how much of the smaller box must lie inside the other, and how close (as a fraction of the larger box) their centers must be. |
 | `TRACK_MAX_AGE` | Frames a track can go undetected before its Kalman filter is dropped. |
@@ -310,6 +352,32 @@ Adjacent frames of one video are near-duplicates, and the
 random train/val split can put them on both sides, so val scores on
 the Det-Fly and Halmstad parts will read a little optimistic.
 
+Two larger drone sets are also downloaded under `datasets/`. They are
+not yet merged by `prepare_combined_dataset.py`:
+- [Seraphim Drone Detection Dataset](https://huggingface.co/datasets/lgrzybowski/seraphim-drone-detection-dataset),
+  Łukasz Grzybowski, Seraphim Defence Systems, 2025
+  (`datasets/seraphim_yolo/{train,test}/{images,labels}/`). 83,483
+  single-class (`drone`) images (75,134 train / 8,349 test), resized
+  and padded to 640x640, YOLO-format annotations. Curated from 23
+  open-source datasets, and the labels were not hand-rechecked. It
+  already contains both Kaggle drone sets above, so don't merge it
+  with them, or the same images can land in both train and val.
+  License: CC BY 4.0.
+  Download: `hf download lgrzybowski/seraphim-drone-detection-dataset --repo-type dataset`,
+  then unzip each `train/` and `test/` `batch_*.zip`.
+- [DUT Anti-UAV](https://github.com/wangdongdut/DUT-Anti-UAV)
+  (detection subset), from J. Zhao, J. Zhang, D. Li, and D. Wang,
+  ["Vision-based Anti-UAV Detection and Tracking,"](https://arxiv.org/abs/2205.10851)
+  *IEEE Transactions on Intelligent Transportation Systems*, 2022
+  (`datasets/dut_anti_uav/{train,val,test}/{images,labels}/`). 10,000
+  visible-light images (5,200 train / 2,600 val / 2,200 test) with
+  10,108 boxes. They cover many UAV types, from small to tiny targets,
+  against cluttered sky and ground backgrounds. The original Pascal VOC
+  XML files are kept in `xml/`, and the `labels/` folder holds YOLO
+  conversions (class 0 = `drone`). The repository states no license,
+  so cite the paper above and treat the data as academic-use only.
+  Download: the Google Drive train/val/test links in the GitHub README.
+
 **Compute:** training device is independent of inference device — a
 model trained on GPU runs identically on the Orin Nano's onboard GPU at
 inference time, since only training speed is affected.
@@ -344,7 +412,12 @@ were built for. The emulation PC keeps running the `.pt` checkpoint.
 ## Known limitations
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
-  Nano + e-CAM25_CUNOX) and `Prototype` modes don't exist yet.
+  Nano + e-CAM25_CUONX pair) and `Prototype` modes don't exist yet.
+- Stereo ranging is only exercised against Unity's ideal pair: perfectly
+  rectified, synchronized, distortion-free images. The hardware pair's
+  calibration, rectification and shutter sync aren't written yet, and
+  real matching error will be larger than in simulation.
+- Webcam and video-file sources are mono, so they get no range.
 - `DroneSpawner` can instantiate (and despawn all) drones on command, but
   nothing moves a drone once it's spawned — there's no motion scripting
   yet (see [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)).

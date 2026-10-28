@@ -72,6 +72,7 @@ def build_source(args):
             connect_retries=config.UNITY_CONNECT_RETRIES,
             retry_delay=config.UNITY_RETRY_DELAY_SEC,
             read_timeout=config.UNITY_READ_TIMEOUT_SEC,
+            stereo=config.STEREO_ENABLED,
         )
     if args.source == "webcam":
         return WebcamSource(index=args.camera_index)
@@ -201,14 +202,19 @@ def run_emulation(args):
                 break
 
             t0 = time.perf_counter()
-            detections = detector.process_frame(frame)
+            detections = detector.process_frame(frame, source.last_stereo)
             if profile_stats is not None:
                 profile_stats["detect"] += time.perf_counter() - t0
             for det in detections:
                 cx, cy = det.smoothed_center
+                if det.position_m is not None:
+                    rx, ry, rz = det.position_m
+                    ranging = f" dist={det.distance_m:.1f}m rel=({rx:+.1f},{ry:+.1f},{rz:+.1f})m"
+                else:
+                    ranging = " dist=n/a"
                 print(
                     f"target id={det.track_id} class={det.class_name} "
-                    f"conf={det.confidence:.2f} pos=({cx:.0f},{cy:.0f})"
+                    f"conf={det.confidence:.2f} pos=({cx:.0f},{cy:.0f}){ranging}"
                 )
 
             if window is not None:
