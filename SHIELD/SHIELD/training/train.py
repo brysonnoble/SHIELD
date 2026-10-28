@@ -3,6 +3,8 @@
 
 Run from SHIELD/SHIELD:
     .venv\\Scripts\\python training\\train.py
+On a bigger GPU (e.g. AI.Panther), raise the batch size and loader workers:
+    python training/train.py --batch 64 --workers 8
 
 Trains on GPU if available; falls back to CPU otherwise. All raw run
 artifacts (checkpoints, plots, last.pt) go to training/runs/, which is
@@ -11,6 +13,7 @@ the one model file that IS committed (see .gitignore) so a second
 machine gets it via `git pull` instead of retraining.
 """
 
+import argparse
 import shutil
 from pathlib import Path
 
@@ -28,6 +31,13 @@ RUN_NAME = "drone_balloon_yolo26s"
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    # batch=8 is about the limit on the 6GB laptop card - raising it
+    # further there may OOM.
+    parser.add_argument("--batch", type=int, default=8)
+    parser.add_argument("--workers", type=int, default=2)
+    args = parser.parse_args()
+
     device = 0 if torch.cuda.is_available() else "cpu"
     print(f"Training on device: {device}")
 
@@ -40,9 +50,8 @@ def main():
         patience=20,
         project=PROJECT_DIR,
         name=RUN_NAME,
-        workers=2,
-        batch=8,  # pushing the observed batch=2/4/6 trend further; scaling
-        # hasn't been perfectly linear so this may OOM on this 6GB card
+        workers=args.workers,
+        batch=args.batch,
     )
 
     best = model.trainer.save_dir / "weights" / "best.pt"

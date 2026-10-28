@@ -2,12 +2,16 @@
 downloads, and (re)generate training/data.yaml for a 2-class model.
 
 Sources (already unzipped under datasets/, which is gitignored):
-  - datasets/drone_dataset_yolo/dataset_txt/    flat dir, class 0 "drone"
-    (from `kaggle datasets download -d dasmehdixtr/drone-dataset-uav`)
-  - datasets/drone_dataset_yolo_2/dataset_txt/  flat dir, class 0 "drone"
-    (from `kaggle datasets download -d sshikamaru/drone-yolo-detection`)
-    adds more scale/distance variety (many far-away/small-in-frame drones);
-    some images are unlabeled backgrounds (empty .txt), kept as negatives.
+  - datasets/seraphim_raw/{train,test}/{images,labels}  class 0 "drone"
+    Seraphim drone detection dataset (Hugging Face
+    lgrzybowski/seraphim-drone-detection-dataset): 23 public drone sets
+    merged, de-duplicated and padded to 640x640. Both of its splits are
+    pooled here; our own val split is drawn below. It already contains
+    the two Kaggle drone sets this script used to read directly
+    (dasmehdixtr/drone-dataset-uav -> datasets/drone_dataset_yolo/,
+    sshikamaru/drone-yolo-detection -> datasets/drone_dataset_yolo_2/), so
+    those are no longer read: the same photos would otherwise land on
+    both sides of the train/val split.
   - datasets/balloon_dataset_yolo/{train,valid}/{images,labels}
     already split, class 0 "balloon"
     (from `kaggle datasets download -d serhiibiruk/balloon-object-detection`)
@@ -17,6 +21,15 @@ Sources (already unzipped under datasets/, which is gitignored):
     Data Collector); ground-truth boxes computed from known scene
     transforms, not hand-labeled. Fills in the sim-domain gap (day/night
     skybox, camera roll, multi-drone frames) real-photo sources lack.
+  - datasets/{dut_anti_uav,det_fly,halmstad}_yolo/dataset_txt/
+    flat dirs, class 0 "drone", produced from the raw DUT Anti-UAV,
+    Det-Fly and Halmstad downloads by convert_extra_datasets.py (run that
+    first). Halmstad also contributes bird/airplane/helicopter frames with
+    empty labels as hard negatives.
+
+A source dir that is missing is skipped with a warning, so a partial set
+can be built while downloads are still outstanding; check the warnings
+before training on the result.
 
 Output: datasets/combined_yolo/{images,labels}/{train,val}/, with balloon
 label class ids remapped 0 -> 1 (drone stays 0) and filenames prefixed per
@@ -28,13 +41,24 @@ import shutil
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
+DATASETS = REPO_ROOT / "datasets"
+SERAPHIM = DATASETS / "seraphim_raw"
+# (image dir, label dir, filename prefix); flat dirs hold both.
 DRONE_SRCS = [
-    (REPO_ROOT / "datasets" / "drone_dataset_yolo" / "dataset_txt", "drone"),
-    (REPO_ROOT / "datasets" / "drone_dataset_yolo_2" / "dataset_txt", "drone2"),
-    (REPO_ROOT / "datasets" / "unity_drone_dataset" / "dataset_txt", "unity"),
+    (SERAPHIM / "train" / "images", SERAPHIM / "train" / "labels", "seraphim_tr"),
+    (SERAPHIM / "test" / "images", SERAPHIM / "test" / "labels", "seraphim_te"),
+    *(
+        (DATASETS / name / "dataset_txt", DATASETS / name / "dataset_txt", prefix)
+        for name, prefix in [
+            ("unity_drone_dataset", "unity"),
+            ("dut_anti_uav_yolo", "dut"),
+            ("det_fly_yolo", "detfly"),
+            ("halmstad_yolo", "halmstad"),
+        ]
+    ),
 ]
-BALLOON_SRC = REPO_ROOT / "datasets" / "balloon_dataset_yolo"
-DST = REPO_ROOT / "datasets" / "combined_yolo"
+BALLOON_SRC = DATASETS / "balloon_dataset_yolo"
+DST = DATASETS / "combined_yolo"
 DRONE_VAL_FRACTION = 0.15
 IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 SEED = 0
@@ -69,9 +93,12 @@ def copy_pair(img_src, lbl_src, split_name, stem, remap_class=None):
 def add_drone():
     pairs = []  # (img_path, lbl_path, stem)
     skipped = 0
-    for src_dir, prefix in DRONE_SRCS:
-        for img_path in list_images(src_dir):
-            lbl_path = src_dir / f"{img_path.stem}.txt"
+    for img_dir, lbl_dir, prefix in DRONE_SRCS:
+        if not img_dir.is_dir():
+            print(f"WARNING: drone source missing, skipped: {img_dir}")
+            continue
+        for img_path in list_images(img_dir):
+            lbl_path = lbl_dir / f"{img_path.stem}.txt"
             if not lbl_path.exists():
                 skipped += 1
                 continue
@@ -93,7 +120,10 @@ def add_drone():
 
 def add_balloon():
     # Kaggle's own split: train/ -> train, valid/ -> val.
-    counts = {}
+    counts = {"train": 0, "val": 0}
+    if not BALLOON_SRC.is_dir():
+        print(f"WARNING: balloon source missing, skipped: {BALLOON_SRC}")
+        return counts
     for kaggle_split, split_name in [("train", "train"), ("valid", "val")]:
         img_dir = BALLOON_SRC / kaggle_split / "images"
         lbl_dir = BALLOON_SRC / kaggle_split / "labels"

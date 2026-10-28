@@ -208,11 +208,19 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 balloon dataset in place of the stock COCO weights. YOLO26 (Ultralytics,
 released January 2026) is a from-scratch redesign for edge/low-power
 deployment with NMS-free end-to-end inference, a good fit for the Orin
-Nano target. Three raw Kaggle
-downloads plus one Unity-rendered synthetic set feed one combined
-training set — three drone sources (two real-photo, one synthetic) plus
-one balloon source:
+Nano target. Seraphim (a merged set of 23 public drone datasets), three
+research datasets, one Unity-rendered synthetic set and one Kaggle
+balloon set feed one combined training set — five drone sources (four
+real-photo, one synthetic) plus one balloon source:
 
+- `convert_extra_datasets.py` — turns the three research datasets (DUT
+  Anti-UAV, Det-Fly, Halmstad), which ship as Pascal VOC XML or as
+  videos with MATLAB labels, into a flat YOLO layout
+  (`datasets/<name>_yolo/dataset_txt/`). Run it before
+  `prepare_combined_dataset.py`. Only Halmstad's visible-light videos are
+  used; its IR videos and audio are skipped. Reading the Halmstad labels
+  needs `pip install mcos-decoder` (not in `requirements.txt`, since
+  nothing else needs it).
 - `prepare_combined_dataset.py` — reads the raw downloads and the
   synthetic set (expected already unzipped/generated under `datasets/`,
   which is gitignored — large binary files don't belong in a public
@@ -220,7 +228,9 @@ one balloon source:
   drone and balloon classes don't collide, prefixes filenames per
   source, and writes the merged result to
   `datasets/combined_yolo/{images,labels}/{train,val}/` plus
-  `training/data.yaml`. Rerun this on each machine you train from.
+  `training/data.yaml`. Rerun this on each machine you train from. A
+  missing source is skipped with a `WARNING` line rather than failing,
+  so check its output before training.
   `data.yaml` itself has no machine-specific paths (Ultralytics
   resolves its `train:`/`val:` entries relative to the yaml file's own
   location when no `path:` key is set) so it's a small, portable,
@@ -230,7 +240,9 @@ one balloon source:
   single-class drone-only run; not used by `train.py` today.
 - `train.py` — fine-tunes `yolo26s.pt` on `training/data.yaml`. Trains
   on GPU automatically if CUDA is available (see `Compute` note
-  below), falls back to CPU otherwise. Raw run artifacts (checkpoints,
+  below), falls back to CPU otherwise. `--batch` (default 8, about the
+  limit on a 6 GB card) and `--workers` (default 2) size it for the
+  machine. Raw run artifacts (checkpoints,
   plots, `last.pt`) go to `training/runs/`, gitignored along with all
   other `*.pt` files. The one exception: the final `best.pt` gets
   copied to `training/weights/drone_balloon_yolo26s_best.pt`, which IS
@@ -238,15 +250,23 @@ one balloon source:
   `git pull` rather than retraining or manually copying a file over.
 
 **Datasets:**
-- [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav),
-  Mehdi Özel. 1,359 single-class (`drone`) images, YOLO-format
-  annotations. License as listed on Kaggle: copyright of original
-  authors.
-- [Drone YOLO Detection](https://www.kaggle.com/datasets/sshikamaru/drone-yolo-detection),
-  sshikamaru. ~4,010 labeled single-class (`drone`) images plus
-  unlabeled background frames (kept as negatives), YOLO-format
-  annotations, wider range of distances/scales than the dataset above.
+- [Seraphim Drone Detection Dataset](https://huggingface.co/datasets/lgrzybowski/seraphim-drone-detection-dataset)
+  (Hugging Face). 83,483 single-class (`drone`) images (75,134 train +
+  8,349 test, both pooled here), YOLO format, every image resized and
+  padded to 640x640. Merges 23 public sets from Kaggle, Roboflow
+  Universe and Hugging Face (including the Pawełczyk & Wojtyra
+  real-world quadcopter set) with exact and near-duplicates removed.
+  Its card notes some marketing and computer-generated images are
+  mixed in. Unzips to `datasets/seraphim_raw/{train,test}/{images,labels}/`.
   License: CC BY 4.0.
+- [Drone Dataset (UAV)](https://www.kaggle.com/datasets/dasmehdixtr/drone-dataset-uav)
+  (1,359 images) and [Drone YOLO Detection](https://www.kaggle.com/datasets/sshikamaru/drone-yolo-detection)
+  (~4,010 images) — the original two Kaggle drone sources
+  (`datasets/drone_dataset_yolo/`, `datasets/drone_dataset_yolo_2/`).
+  Both are part of Seraphim, so `prepare_combined_dataset.py` no longer
+  reads them directly; reading both would put the same photos on both
+  sides of the train/val split. `prepare_dataset.py` still uses the
+  first one.
 - [Balloon Object Detection](https://www.kaggle.com/datasets/serhiibiruk/balloon-object-detection),
   Serhii Biruk. 2,365 single-class (`balloon`) images, YOLO-format
   annotations (Roboflow export). License: MIT.
@@ -260,10 +280,66 @@ one balloon source:
   skybox; ground-truth boxes are computed from known scene transforms
   rather than hand-labeled. Fills the sim-domain gap (day/night, camera
   roll, multi-drone frames) the real-photo sources lack.
+- [DUT Anti-UAV](https://github.com/wangdongdut/DUT-Anti-UAV) (detection
+  set), Zhao et al., "Vision-based Anti-UAV Detection and Tracking",
+  IEEE T-ITS 2022. 10,000 visible-light images (all three official
+  splits are used), ~10,100 boxes of class `UAV`, Pascal VOC XML. Mostly
+  small drones against sky, buildings and trees. Google Drive downloads
+  (`train.zip`, `val.zip`, `test.zip`) unzip to
+  `datasets/dut_anti_uav_raw/{train,val,test}/{img,xml}/`. No license
+  stated in the repo; cite the paper.
+- [Det-Fly](https://github.com/Jake-WU/Det-Fly), Zheng et al.,
+  "Air-to-Air Visual Detection of Micro-UAVs", IEEE RA-L 2021. 13,271
+  images of a DJI Mavic taken from a second drone (sky, urban, field
+  and mountain backgrounds; front, top and bottom views; many very
+  small targets), Pascal VOC XML. About 19 GB of full-resolution images
+  on the authors' OneDrive; `convert_extra_datasets.py` downscales them
+  to 1920 px on the long side. Raw layout:
+  `datasets/det_fly_raw/{JPEGImages,Annotations}/{010,020}/`. No license
+  stated in the repo; cite the paper.
+- [Halmstad multi-sensor drone detection dataset](https://github.com/DroneDetectionThesis/Drone-detection-dataset)
+  ([Zenodo](https://doi.org/10.5281/zenodo.5500576)), Svanström et al.,
+  Data in Brief 2021. Only the 285 visible-light 640x512 videos
+  (`datasets/halmstad_raw/Video_V/`) are used. Every 10th frame of the
+  114 drone videos becomes a labeled image (~3,400), and every 30th
+  frame of the airplane, bird and helicopter videos becomes an
+  empty-label hard negative (~2,100). Labels are MATLAB `groundTruth`
+  `.mat` files. "Free to download, use and edit" per the authors.
+
+Adjacent frames of one video are near-duplicates, and the
+random train/val split can put them on both sides, so val scores on
+the Det-Fly and Halmstad parts will read a little optimistic.
 
 **Compute:** training device is independent of inference device — a
 model trained on GPU runs identically on the Orin Nano's onboard GPU at
 inference time, since only training speed is affected.
+
+**Training on AI.Panther:** the full model is trained on Florida Tech's
+AI.Panther HPC cluster, on one A100 at `--batch 64`, through Slurm
+(`training/panther_train.slurm`; heavy work isn't allowed on the login
+node). The combined set there is built from Seraphim, DUT Anti-UAV,
+Det-Fly, Halmstad and the balloon set; the Unity synthetic set is not
+included in that run.
+
+| Source | Images |
+|---|---|
+| Seraphim | 83,483 |
+| Det-Fly | 13,271 |
+| DUT Anti-UAV | 10,000 |
+| Halmstad (visible only; 3,415 drone + 2,070 negatives) | 5,485 |
+| Balloon | 2,365 |
+| **Total** | **114,604** (97,660 train / 16,944 val) |
+
+Setup notes are in the comments at the top of `panther_train.slurm`. The
+venv must be built from the AMD (zen2) Python build, since the login
+node's default `python` module crashes with "Illegal instruction" on the
+GPU nodes.
+
+**INT8:** training runs at full precision; INT8 is a post-training step.
+`deploy/export_int8.py` builds an INT8 TensorRT engine from the trained
+checkpoint, calibrated on images from `training/data.yaml`, and must run
+on the Orin itself, because TensorRT engines only load on the GPU they
+were built for. The emulation PC keeps running the `.pt` checkpoint.
 
 ## Known limitations
 
