@@ -2,6 +2,8 @@
 # Slurm job for training on AI.Panther (Florida Tech HPC). Submit from
 # SHIELD/SHIELD on the login node:
 #     sbatch training/panther_train.slurm
+# A variant run takes a name and extra train settings (see train.py):
+#     sbatch --job-name=seed1 training/panther_train.slurm --name seed1 seed=1
 # Watch it with `squeue -u $USER` and `tail -f training/logs/train.<jobid>.out`.
 #
 # One-time setup on the login node (light work, allowed there). The
@@ -24,7 +26,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+# The first run's GPU sat at 35-75% waiting on image decoding, and
+# Ultralytics starts 2x --workers loader processes, so give it room.
+#SBATCH --cpus-per-task=32
 #SBATCH --mem=64GB
 #SBATCH --time=3-00:00:00
 #SBATCH --output=training/logs/train.%J.out
@@ -36,5 +40,5 @@ python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" |
 
 echo "Starting at $(date) on $SLURM_NODELIST"
 nvidia-smi
-python training/train.py --batch 64 --workers 14
+python training/train.py --batch 64 --workers 14 "$@"
 echo "Finished at $(date)"
