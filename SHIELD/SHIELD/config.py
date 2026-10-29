@@ -5,10 +5,10 @@
 # --- Model ---
 # Custom YOLO fine-tuned on a drone+balloon dataset (see "Custom
 # drone/balloon model" section in the repo root README.md), replacing
-# the stock COCO-pretrained weights.
-# TODO: switch back to a yolo26s build (drone_balloon_yolo26s_best.pt) once
-# retrained - drone_balloon_yolo11n_best.pt is a stand-in until then.
-MODEL_PATH = "training/weights/drone_balloon_yolo11n_best.pt"
+# the stock COCO-pretrained weights. Trained on AI.Panther (val mAP50 0.933,
+# mAP50-95 0.693); the Orin uses an INT8 engine built from this file by
+# deploy/export_int8.py.
+MODEL_PATH = "training/weights/drone_balloon_yolo26s_best.pt"
 DEVICE = "cuda"
 
 # Detector confidence floor for candidate detections - not an engagement
