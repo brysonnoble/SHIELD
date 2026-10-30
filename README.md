@@ -374,6 +374,21 @@ included in that run.
 | Balloon | 2,365 |
 | **Total** | **114,604** (97,660 train / 16,944 val) |
 
+Seven runs were trained on this set: the defaults with seeds 0, 1 and
+2, `scale=0.9`, and `cos_lr=True patience=40` with seeds 0, 1 and 2.
+All landed within about 0.01 of each other. The committed model is the
+seed 1 run (`train.py --name seed1 seed=1`), which scored best on the
+drone class:
+
+| Class | Precision | Recall | mAP50 | mAP50-95 |
+|---|---|---|---|---|
+| All | 0.950 | 0.887 | 0.939 | 0.699 |
+| Drone | 0.976 | 0.961 | 0.978 | 0.720 |
+| Balloon | 0.924 | 0.812 | 0.901 | 0.678 |
+
+The cosine learning-rate runs scored lowest on drones, and seed-to-seed
+spread was as large as any setting's effect.
+
 Setup notes are in the comments at the top of `panther_train.slurm`. The
 venv must be built from the AMD (zen2) Python build, since the login
 node's default `python` module crashes with "Illegal instruction" on the
