@@ -1,0 +1,3 @@
+[submodule "External/SHIELD-S_GNC_PIPELINE"]
+	path = External/SHIELD-S_GNC_PIPELINE
+	url = https://github.com/avijay2024/SHIELD-S_GNC_PIPELINE.git
