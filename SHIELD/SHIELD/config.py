@@ -32,9 +32,37 @@ CLASS_FILTER = None
 # no ranging, e.g. to compare against a build without the stereo rig.
 STEREO_ENABLED = True
 
-# Nearest range searched for. Sets the widest disparity searched
-# (f * B / this), so lowering it costs matching time on every target.
-STEREO_MIN_RANGE_M = 1.0
+# Nearest DEPTH (distance along the line of sight, not straight-line
+# range) searched for. Sets the widest disparity searched (f * B / this:
+# ~503 px at 0.4 m with the 20 cm baseline). A target off to the side is
+# shallower than its range - at 1.0 m the first value here missed every
+# off-center 1 m test spawn - so keep this below the nearest test range
+# (AVS_Edge_Case_Test's 0.5 m). Not 0: the limit is what rules out
+# physically impossible matches, e.g. a second identical drone further
+# left in the same rows.
+STEREO_MIN_RANGE_M = 0.4
+
+# Only the central part of each box is matched, this fraction of its width
+# and height. A quad's box is largely background seen between its arms,
+# and that background barely shifts between the two images while the
+# drone shifts by the full disparity - at close range (hundreds of px of
+# disparity) it dragged the match score of the whole box under
+# STEREO_MIN_MATCH_SCORE. The core is mostly the drone's own body.
+STEREO_TEMPLATE_CORE = 0.5
+# Smallest and largest real-world span (m) a target can have. A box s px
+# across then can only be at a disparity between B*s/max and B*s/min, so
+# each box searches just that band instead of the whole window above. This
+# is what stops a wide window from returning confident, very wrong, very
+# close ranges: in offline tests a 20 m drone matched stray ground texture
+# at "0.9 m", and one of two identical drones in the same rows matched the
+# other at "0.5 m". Generous on purpose - a drone seen edge-on or clipped by
+# the frame looks smaller than its span.
+STEREO_TARGET_SPAN_M = (0.1, 2.0)
+
+# ...but never shrink the matched patch below this many pixels a side (or
+# the box itself, if smaller), so small far-away boxes keep enough
+# texture to match on.
+STEREO_TEMPLATE_MIN_PX = 16
 
 # Minimum normalized cross-correlation (-1..1) between the target's box
 # in the left image and its best match in the right before a range is

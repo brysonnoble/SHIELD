@@ -32,6 +32,9 @@ class Detection:
     # been stereo-matched yet.
     position_m: Optional[tuple] = None
     distance_m: Optional[float] = None
+    # This frame's best left/right stereo match correlation (-1..1), even
+    # if it was too low to range on; None if no match was attempted.
+    match_score: Optional[float] = None
 
 
 class _CentroidKalmanFilter:
@@ -147,9 +150,9 @@ class SHIELDDetector:
             ids = tracks[:, 4].astype(int)
             confs = tracks[:, 5]
             classes = tracks[:, 6].astype(int)
-            positions = self._ranger.locate(frame, stereo, xyxy)
+            fixes = self._ranger.locate(frame, stereo, xyxy)
 
-            for box, track_id, conf, cls_id, raw_position in zip(xyxy, ids, confs, classes, positions):
+            for box, track_id, conf, cls_id, fix in zip(xyxy, ids, confs, classes, fixes):
                 x1, y1, x2, y2 = box
                 cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
                 w, h = x2 - x1, y2 - y1
@@ -161,7 +164,7 @@ class SHIELDDetector:
                 else:
                     tracker.predict()
                 scx, scy = tracker.correct(cx, cy)
-                position_m = tracker.update_position(raw_position, self.range_smoothing)
+                position_m = tracker.update_position(fix.position_m, self.range_smoothing)
 
                 detections.append(
                     Detection(
@@ -173,6 +176,7 @@ class SHIELDDetector:
                         smoothed_bbox=(scx - w / 2, scy - h / 2, scx + w / 2, scy + h / 2),
                         position_m=None if position_m is None else tuple(float(v) for v in position_m),
                         distance_m=None if position_m is None else float(np.linalg.norm(position_m)),
+                        match_score=fix.match_score,
                     )
                 )
                 seen_ids.add(track_id)

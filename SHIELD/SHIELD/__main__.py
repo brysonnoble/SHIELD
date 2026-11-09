@@ -212,6 +212,11 @@ def run_emulation(args):
                     ranging = f" dist={det.distance_m:.1f}m rel=({rx:+.1f},{ry:+.1f},{rz:+.1f})m"
                 else:
                     ranging = " dist=n/a"
+                # This frame's stereo match correlation - when dist is n/a,
+                # shows whether the match was tried and how far below
+                # config.STEREO_MIN_MATCH_SCORE it fell.
+                if det.match_score is not None:
+                    ranging += f" match={det.match_score:.2f}"
                 print(
                     f"target id={det.track_id} class={det.class_name} "
                     f"conf={det.confidence:.2f} pos=({cx:.0f},{cy:.0f}){ranging}"

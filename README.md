@@ -234,8 +234,10 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | `CONFIDENCE_THRESHOLD` | Detector confidence floor for candidate detections (0.25) - not an engagement gate, but nothing below it is ever reported, so a target whose confidence dips under it drops out of the output. See AVS-03's >=25% confidence-while-en-route requirement, enforced separately as `gcs_ui.ENGAGE_CONFIDENCE_FLOOR`. |
 | `CLASS_FILTER` | Restrict detection to specific class names from the custom model, e.g. `["drone"]` to ignore balloon detections. `None` = keep both classes. |
 | `STEREO_ENABLED` | Ask the Unity virtual camera for stereo frames, giving each target a range (`dist=` in the console, `m` on the HUD and in the target list) and relative position (`rel=(right,up,forward)m` in the console). Off = mono frames, no ranging. |
-| `STEREO_MIN_RANGE_M` | Nearest range searched for; sets the widest disparity searched (`f * B /` this). |
-| `STEREO_MIN_MATCH_SCORE` | Minimum left/right match correlation (-1..1) before a range is trusted; below it the last fix is kept. |
+| `STEREO_MIN_RANGE_M` | Nearest depth (along the line of sight, not straight-line range) searched for; sets the widest disparity searched (`f * B /` this). 0.4 m, under the nearest test spawn (0.5 m). An off-center target is shallower than its range, which is why 1.0 m missed the off-center 1 m spawns. Not 0: the limit is what rules out impossible matches. |
+| `STEREO_TARGET_SPAN_M` | Smallest/largest real-world target size (0.1-2 m). A box `s` px across can only be at disparity `B*s/max .. B*s/min`, so each box searches just that band - this is what keeps the wide window from matching stray texture or a second identical drone and reporting a wrong, very close range. |
+| `STEREO_TEMPLATE_CORE` / `STEREO_TEMPLATE_MIN_PX` | Only the central fraction of each box (at least this many px a side) is matched, so the background showing between a quad's arms - which doesn't shift with the drone - doesn't drag the match score down at close range. |
+| `STEREO_MIN_MATCH_SCORE` | Minimum left/right match correlation (-1..1) before a range is trusted; below it the last fix is kept. Each frame's best score is printed as `match=` on the console line, even when it's too low to range on. |
 | `STEREO_MIN_DISPARITY_PX` | Shifts smaller than this are too far away to range (1 px ≈ 200 m at the 20 cm baseline). |
 | `STEREO_RANGE_SMOOTHING` | Per-track exponential smoothing factor for position and range. |
 | `TRACKER_CONFIG` | ByteTrack config bundled with ultralytics. |
