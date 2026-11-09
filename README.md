@@ -111,7 +111,23 @@ range = sqrt(X^2 + Y^2 + Z^2)
 `f` is the focal length in pixels, `B` the baseline between the two
 cameras, and `(u, v)` the box center. Matching only the target's own box,
 rather than computing a full depth map, keeps it well under a millisecond
-per target and keeps the background from deciding the answer.
+per target and keeps the background from deciding the answer. Two
+refinements keep that true up close:
+
+- Each box is matched twice, on its central half and as a whole, and the
+  better score wins. A quad's box is largely background seen between its
+  arms; that background barely shifts between the two images while the
+  drone shifts by hundreds of pixels at 1 m, which sinks a whole-box
+  match. The core fixes that for most airframes, but not all, hence both.
+- The search is limited to disparities a real target could have at that
+  box size: a box `s` px across, for a target spanning 0.1-2 m, can only
+  be at `d = B*s/2 .. B*s/0.1`. Without it, a small far drone can match
+  stray background texture, or one of two identical drones the other,
+  both reported as confident ranges under 1 m.
+
+Each frame's best match score is printed as `match=` on the console line,
+including when it's too low to range on, so a missing `dist=` can be
+diagnosed from the logs.
 
 The Unity virtual camera models the pair on the e-CAM25_CUONX: 1920x1200
 AR0234 sensors with e-con's stock lens (61.6° vertical field of view, so
@@ -151,8 +167,14 @@ automatically. On a dev PC without an NVIDIA GPU, switch this to
 From the repo root:
 
 ```
+git submodule update --init
 setup.bat
 ```
+
+The first line checks out the GNC team's repo into
+`External/SHIELD-S_GNC_PIPELINE` (a submodule; cloning with
+`git clone --recursive` does the same). Only the GNC SITL below needs it -
+the detection pipeline and the STE tests run without it.
 
 This creates a virtual environment, installs all Python dependencies,
 and pre-downloads the YOLO model. If it finds an NVIDIA GPU (via
@@ -402,6 +424,17 @@ checkpoint, calibrated on images from `training/data.yaml`, and must run
 on the Orin itself, because TensorRT engines only load on the GPU they
 were built for. The emulation PC keeps running the `.pt` checkpoint.
 
+## GNC controller SITL
+
+[`Test Tools/GNC SITL/`](Test%20Tools/GNC%20SITL/README.md) is a C++
+port of the GNC team's LQR flight controller and the quadrotor model it
+was designed on, reading their gains and parameters from the
+`External/SHIELD-S_GNC_PIPELINE` submodule. Its `--validate` mode checks
+the port against their Simscape results (0.2 mm on their reviewed
+trajectory); re-run it when they update their gains or model. It is a
+standalone tool: not wired into the STE harness, the Unity scene or the
+detection pipeline.
+
 ## Known limitations
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
@@ -411,9 +444,18 @@ were built for. The emulation PC keeps running the `.pt` checkpoint.
   calibration, rectification and shutter sync aren't written yet, and
   real matching error will be larger than in simulation.
 - Webcam and video-file sources are mono, so they get no range.
-- `DroneSpawner` can instantiate (and despawn all) drones on command, but
-  nothing moves a drone once it's spawned — there's no motion scripting
-  yet (see [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)).
+- Target drones move only in straight lines: `DroneSpawner` can spawn a
+  drone that hovers in place or flies from one point to another at a set
+  speed and then hovers (`DroneAutopilot.cs`; see
+  [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)). There are no
+  curved paths, evasive motion or scripted multi-leg routes, and the
+  camera itself stays where the scene puts it.
+- Stereo range reads about 0.1 m short in the STE tests (e.g. 4.9 m for a
+  drone spawned at 5 m, 0.9 m at 1 m): the match lands on the drone's
+  near surface or body, while tests place drones by their center point.
+- A few spawns still get no range (`dist=n/a`, `match=` under 0.6) -
+  in AVS_Detection_Test, the BumbleBee at 1 m below center and the Toad
+  at 20 m in sweep 2.
 
 ## Troubleshooting
 

@@ -30,7 +30,8 @@ camera stream):
 | Component | Port | Command | Effect |
 |---|---|---|---|
 | `SceneSelector` (`Assets/Scripts/SceneSelector.cs`) | `5556` | `ENV DAY` / `ENV NIGHT` | Swaps `RenderSettings.skybox` between `Assets/Misc/Materials/HDRI SkyLightBox [Day].mat` and `[Dusk].mat`, no scene reload. |
-| `DroneSpawner` (`Assets/Scripts/DroneSpawner.cs`) | `5557` | `SPAWN <Quad\|Toad\|BumbleBee> <x> <y> <z>` | Instantiates the matching `Assets/Prefabs/_Drone [...]` prefab at the given world coordinates. |
+| `DroneSpawner` (`Assets/Scripts/DroneSpawner.cs`) | `5557` | `SPAWN <Quad\|Toad\|BumbleBee> <x> <y> <z>` | Instantiates the matching `Assets/Prefabs/_Drone [...]` prefab at the given world coordinates, hovering in place. |
+| `DroneSpawner` (`Assets/Scripts/DroneSpawner.cs`) | `5557` | `SPAWN <Quad\|Toad\|BumbleBee> <x> <y> <z> <endX> <endY> <endZ> <speed>` | Same, but facing the end position; `DroneAutopilot.cs` then flies it there in a straight line at `<speed>` m/s with the drone pack's physics and hovers. |
 | `DroneSpawner` (`Assets/Scripts/DroneSpawner.cs`) | `5557` | `DESPAWN ALL` | Destroys every drone that `DroneSpawner` has instantiated so far. |
 | `CameraController` (`Assets/Scripts/CameraController.cs`) | `5558` | `CAM RESET` | Resets the GameObject it's attached to (the Main Camera) back to world position `(0, 0, 0)`. |
 | `CameraController` (`Assets/Scripts/CameraController.cs`) | `5558` | `QUIT` | Calls `Application.Quit()`, running Unity's own shutdown path instead of being closed/killed from the outside. |

@@ -2,8 +2,10 @@ Imports System
 
 ' Requirement source: "SHIELD RTM & Tracking", sheet GNC. None of these are
 ' implemented in software yet - this repo's pipeline stops at detection/
-' tracking (see the root README's architecture diagram); there's no
-' guidance loop, state-space model, or EKF/UKF estimator to exercise.
+' tracking (see the root README's architecture diagram). Test Tools\GNC SITL
+' ports the GNC team's LQR position controller and its quadrotor model,
+' but there's no guidance law, relative-motion model or EKF/UKF estimator
+' to exercise, and the SITL isn't connected to this harness.
 Module GNC_Requirements_Test
     Sub Main()
         Try
