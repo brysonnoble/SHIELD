@@ -6,7 +6,7 @@ Module AVS_Detection_Test
     Private ReadOnly SweepOffsets()          As (X As Double, Y As Double) = {
         (0.0, 0.0),
         (0.25, 0.15),
-        (-0.2, -0.3)
+        (-0.2, -0.2)
     }
     Private Const DetectionTimeoutSeconds As Double = 10
     Private Const ConfidenceWindowSeconds As Double = 3

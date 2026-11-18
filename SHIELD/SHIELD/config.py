@@ -1,6 +1,6 @@
 # Central configuration for the SHIELD detect/track pipeline.
 # Values here are shared between emulation (PC) and, eventually, hardware
-# (NVIDIA Jetson Orin Nano + a stereo pair of e-CAM25_CUONX) runs.
+# (NVIDIA Jetson Orin Nano + Waveshare IMX219-83 stereo camera) runs.
 
 # --- Model ---
 # Custom YOLO fine-tuned on a drone+balloon dataset (see "Custom
@@ -23,8 +23,8 @@ CONFIDENCE_THRESHOLD = 0.25
 CLASS_FILTER = None
 
 # --- Stereo ranging ---
-# Each target's range and relative position come from a stereo pair of
-# e-CAM25_CUONX cameras (see stereo_ranging.py). The baseline and focal
+# Each target's range and relative position come from the Waveshare
+# IMX219-83 stereo camera (see stereo_ranging.py). The baseline and focal
 # length arrive with every stereo frame (the Unity virtual camera sends
 # its own; on hardware they'll come from the pair's calibration), so
 # only matching settings live here.
@@ -34,7 +34,7 @@ STEREO_ENABLED = True
 
 # Nearest DEPTH (distance along the line of sight, not straight-line
 # range) searched for. Sets the widest disparity searched (f * B / this:
-# ~503 px at 0.4 m with the 20 cm baseline). A target off to the side is
+# ~174 px at 0.4 m with the IMX219-83's 6 cm baseline). A target off to the side is
 # shallower than its range - at 1.0 m the first value here missed every
 # off-center 1 m test spawn - so keep this below the nearest test range
 # (AVS_Edge_Case_Test's 0.5 m). Not 0: the limit is what rules out
@@ -71,7 +71,7 @@ STEREO_MIN_MATCH_SCORE = 0.6
 
 # Disparities below this many pixels are reported as no fix: range error
 # grows as 1/d^2, so a sub-pixel shift is too far away to range usefully.
-# 1 px is ~200 m with the default 20 cm baseline.
+# 1 px is ~70 m with the IMX219-83's 6 cm baseline.
 STEREO_MIN_DISPARITY_PX = 1.0
 
 # Per-track exponential smoothing of position (0 = frozen, 1 = no

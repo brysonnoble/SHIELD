@@ -18,20 +18,20 @@ Module AVS_Tracking_Test
         ' minimum span of 0.25 m.
         ' =====================================================================
 
-        ' Targets sit at least 0.3 apart in offset units, about 300 px in the
-        ' 1920x1200 frame; a drone at 2 m/s and 12 m moves about 6 px per
+        ' Targets sit at least 0.2 apart in offset units, about 230 px in the
+        ' 1280x720 frame; a drone at 2 m/s and 12 m moves about 6 px per
         ' frame, so a jump over MaxJumpPixels means an ID changed hands
         ' between targets.
         Dim TargetRangeMeters    As Double = 12
         Dim StillOffsets()       As (X As Double, Y As Double) = {
-            (-0.4, 0.3),
+            (-0.4, 0.2),
             (0.0, 0.0),
-            (0.4, -0.3)
+            (0.4, -0.2)
         }
         Dim Lanes()              As (OffY As Double, StartOffX As Double, EndOffX As Double) = {
-            (0.3, -0.6, 0.6),
-            (0.0, 0.6, -0.6),
-            (-0.3, -0.6, 0.6)
+            (0.2, -0.45, 0.45),
+            (0.0, 0.45, -0.45),
+            (-0.2, -0.45, 0.45)
         }
         Dim SpeedMps             As Double = 2
         Dim TrackWindowSeconds   As Double = 10
@@ -81,7 +81,7 @@ Module AVS_Tracking_Test
         Dim EndRangeMeters        As Double = 1
         Dim Approaches()          As (StartOffX As Double, StartOffY As Double, EndOffX As Double, EndOffY As Double) = {
             (0.0, 0.0, 0.0, 0.0),
-            (-0.5, 0.25, 0.15, -0.1)
+            (-0.4, 0.2, 0.15, -0.1)
         }
         Dim SpeedMps              As Double = 2
         Dim AcquireTimeoutSeconds As Double = 3

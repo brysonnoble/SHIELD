@@ -35,11 +35,12 @@ Public Module Common_Test_Variables
 
     ' Where the frame edges sit in InstDroneAtRange()'s offset units (the
     ' tangent of the angle off the line of sight). Must match the frames
-    ' CameraStreamer.cs streams - the e-CAM25_CUONX sensor it emulates: a
-    ' 61.6 degree vertical field of view, so tan(30.8 deg), on a 1920x1200
-    ' (16:10) image, which widens the horizontal edge by 16/10.
-    Public ReadOnly FRAME_EDGE_OFFSET_Y As Double = Math.Tan(30.8 * Math.PI / 180)
-    Public ReadOnly FRAME_EDGE_OFFSET_X As Double = FRAME_EDGE_OFFSET_Y * 16 / 10
+    ' CameraStreamer.cs streams - the Waveshare IMX219-83 it emulates, in the
+    ' IMX219's 1280x720 @ 60 fps mode: a 34.5 degree vertical field of view,
+    ' so tan(17.25 deg) (~0.31), on a 16:9 image, which widens the
+    ' horizontal edge by 1280/720 (~0.55).
+    Public ReadOnly FRAME_EDGE_OFFSET_Y As Double = Math.Tan(17.25 * Math.PI / 180)
+    Public ReadOnly FRAME_EDGE_OFFSET_X As Double = FRAME_EDGE_OFFSET_Y * 1280 / 720
 
     ' Must match DroneAutopilot.cs's maxAcceleration (m/s^2) - see
     ' Common_Test_Functions.EstimatedFlightSeconds().

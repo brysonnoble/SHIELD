@@ -1,8 +1,8 @@
 # Stereo ranging: locates each detected target in 3D from a rectified
 # stereo pair - two identical cameras side by side, the reference (left)
-# camera on the left, image rows aligned. Modeled on a pair of
-# e-CAM25_CUONX (AR0234) cameras; the Unity virtual camera renders exactly
-# such a pair (see CameraStreamer.cs).
+# camera on the left, image rows aligned. Modeled on the Waveshare
+# IMX219-83 (two IMX219s, 60 mm apart); the Unity virtual camera renders
+# exactly such a pair (see CameraStreamer.cs).
 #
 # Only the target's own box is matched, not the whole frame: the box
 # from the left image is searched for along the same rows of the right
@@ -117,7 +117,7 @@ class StereoRanger:
         if max_disparity <= min_disparity:
             return None, None
         # Only the box and its search strip are converted to grayscale, not
-        # the whole 1920x1200 frames.
+        # the whole frames.
         h, w = left.shape[:2]
         x1, y1 = max(0, int(np.floor(box[0]))), max(0, int(np.floor(box[1])))
         x2, y2 = min(w, int(np.ceil(box[2]))), min(h, int(np.ceil(box[3])))

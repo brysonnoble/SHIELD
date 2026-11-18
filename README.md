@@ -21,8 +21,8 @@ The project spans two disciplines: AEE builds the airframe, propulsion,
 and interception mechanism; SWE (this repo) builds the perception and
 autonomy stack — detection, tracking, and the decision logic that hands
 off between autonomous and manually-overridden engagement. The target
-hardware is an **NVIDIA Jetson Orin Nano + a stereo pair of e-CAM25_CUONX
-(AR0234 global shutter) cameras** mounted on the drone, running the same Python pipeline
+hardware is an **NVIDIA Jetson Orin Nano + a Waveshare IMX219-83 stereo
+camera** (two Sony IMX219s, 60 mm apart) mounted on the drone, running the same Python pipeline
 that this repo lets you build and test on a Windows PC first, using
 Unity as a stand-in camera feed instead of the physical camera.
 
@@ -53,7 +53,7 @@ through detection/tracking, the custom drone/balloon model, and
 emulation-level interception) run September–November 2026; a second
 semester of hardware integration and final demo follows in spring 2027.
 Only the `Emulation` platform mode (PC-based, Unity or webcam camera
-feed) is implemented today — `Hardware` (Jetson Orin Nano + e-CAM25_CUONX pair)
+feed) is implemented today — `Hardware` (Jetson Orin Nano + IMX219-83)
 and `Prototype` modes are reserved for later milestones. See
 [Known limitations](#known-limitations) below and the itemized milestone
 tasks in the [project plan](#team--project-links).
@@ -88,8 +88,8 @@ Unity "SHIELD Virtual Camera"  --TCP/JPEG-->  Python pipeline
 ```
 
 On the real drone this same Python pipeline runs on the Orin Nano, with
-its onboard GPU accelerating YOLO inference and the e-CAM25_CUONX pair as
-the source. Locally, `--source unity` stands in for that pair (Unity
+its onboard GPU accelerating YOLO inference and the IMX219-83 as the
+source. Locally, `--source unity` stands in for that pair (Unity
 renders both cameras), and `--source webcam` for a single camera without
 ranging.
 
@@ -129,15 +129,32 @@ Each frame's best match score is printed as `match=` on the console line,
 including when it's too low to range on, so a missing `dist=` can be
 diagnosed from the logs.
 
-The Unity virtual camera models the pair on the e-CAM25_CUONX: 1920x1200
-AR0234 sensors with e-con's stock lens (61.6° vertical field of view, so
-`f` ≈ 1006 px), 20 cm apart (`CameraStreamer.cs`'s `baselineMeters`).
+The Unity virtual camera models the Waveshare IMX219-83 chosen at the PDR
+(`CameraStreamer.cs`):
+
+| | IMX219-83 | Modeled as |
+|---|---|---|
+| Sensor | Sony IMX219, 3280x2464, 1.12 µm pixels | 1280x720 @ 60 fps, the mode in the data budget: 2x2 binned from a centered 2560x1440 crop |
+| Lens | 2.6 mm, listed as 73° x 50° | `f` ≈ 1161 px, so the 1280x720 crop is a 57.7° x 34.5° ideal pinhole (the whole 4:3 array would be 70.5° x 55.9°; the listed angles can't both hold on a 4:3 sensor, so the focal length decides) |
+| Baseline | 60 mm | `baselineMeters` = 0.06 |
+| Sync | None between the two cameras | Both rendered in the same frame |
+
 Unity sends `B` and `f` with every stereo frame. Error grows with range
-squared: roughly `range² × matching error / (f × B)`, so about 2-3% at
-20 m for a quarter-pixel matching error. On hardware the pair needs a
-stereo calibration (OpenCV `stereoCalibrate` + `stereoRectify`) to undo
-the wide lens's distortion and align the rows before matching, and
-hardware-synchronized shutters so both images show the same instant.
+squared: roughly `range² × matching error / (f × B)`. With `f × B` only
+about 70 px·m, a quarter-pixel matching error is ~0.4 m at 10 m and
+~1.4 m at 20 m (~7%), about three times the error of the 20 cm pair this
+camera replaced. At 20 m the whole disparity is only ~3.5 px.
+
+On hardware the pair also needs:
+
+- A stereo calibration (OpenCV `stereoCalibrate` + `stereoRectify`) to
+  undo the lens distortion and align the rows before matching. Its focal
+  length and baseline replace the ones Unity sends.
+- Frames paired by capture timestamp. The IMX219-83 has no hardware sync,
+  so the two images can be taken at slightly different instants, and a
+  target moving sideways shifts between them by its own motion. That
+  shift adds straight onto the disparity, so it matters most for fast
+  targets at range.
 
 ## Drone <-> GCS command link
 
@@ -470,7 +487,7 @@ detection pipeline.
 ## Known limitations
 
 - Only `platform 0` (Emulation) is implemented — `Hardware` (Jetson Orin
-  Nano + e-CAM25_CUONX pair) and `Prototype` modes don't exist yet.
+  Nano + IMX219-83) and `Prototype` modes don't exist yet.
 - Stereo ranging is only exercised against Unity's ideal pair: perfectly
   rectified, synchronized, distortion-free images. The hardware pair's
   calibration, rectification and shutter sync aren't written yet, and

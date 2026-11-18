@@ -6,8 +6,8 @@ using System.Threading;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 
-// Attach to the scene's Main Camera. Streams what a stereo pair of
-// e-CAM25_CUONX (AR0234) cameras would see to a local Python process over
+// Attach to the scene's Main Camera. Streams what the Waveshare IMX219-83
+// stereo camera (two Sony IMX219s) would see to a local Python process over
 // TCP, so the SHIELD detect/track/range pipeline can run against the Unity
 // virtual camera before the Jetson Orin Nano + camera hardware exists.
 //
@@ -42,19 +42,28 @@ public class CameraStreamer : MonoBehaviour
     [Range(1, 30)] public int targetFps = 30;
     [Range(10, 100)] public int jpegQuality = 75;
 
-    [Header("Sensor (e-CAM25_CUONX, onsemi AR0234)")]
-    [Tooltip("AR0234 active array, 1920x1200 at 3 um pixels.")]
-    public int sensorWidth = 1920;
-    public int sensorHeight = 1200;
-    [Tooltip("e-con's stock lens: 61.6 deg vertical. Applied to both cameras as an ideal (undistorted) pinhole - "
-             + "the real lens's barrel distortion is calibrated out on hardware before matching.")]
-    public float verticalFovDegrees = 61.6f;
+    // The IMX219's full array is 3280x2464 (1.12 um pixels). The data
+    // budget runs it in the Jetson driver's 1280x720 @ 60 fps mode, which
+    // is 2x2 binned (2.24 um effective pixels) from a centered 2560x1440
+    // crop - so it sees only the middle of the lens's field of view.
+    [Header("Sensor (Waveshare IMX219-83, Sony IMX219)")]
+    [Tooltip("IMX219 1280x720 @ 60 fps mode: 2x2 binned from a centered 2560x1440 crop (2.24 um effective pixels).")]
+    public int sensorWidth = 1280;
+    public int sensorHeight = 720;
+    // The 2.6 mm lens over 2.24 um pixels is a ~1161 px focal length, so
+    // the 1280x720 crop is a 57.7 x 34.5 deg pinhole. (The whole 4:3 array
+    // would be 70.5 x 55.9 deg; Waveshare lists 73 x 50 deg, which can't
+    // both hold for one lens on a 4:3 sensor.) On hardware the focal length
+    // comes from stereo calibration.
+    [Tooltip("2.6 mm lens in the 1280x720 crop: 34.5 deg vertical (f ~1161 px). Applied to both cameras as an ideal "
+             + "(undistorted) pinhole - the real lens's distortion (<1%) is calibrated out on hardware before matching.")]
+    public float verticalFovDegrees = 34.5f;
 
     [Header("Stereo")]
     public bool stereo = true;
-    [Tooltip("Distance between the two camera centers. Range error grows as range^2 / (focal length * baseline), "
-             + "so wider ranges better; 20 cm gives ~2-3% at 20 m.")]
-    public float baselineMeters = 0.20f;
+    [Tooltip("Distance between the two camera centers: 60 mm on the IMX219-83. Range error grows as "
+             + "range^2 / (focal length * baseline), so a short baseline ranges far targets coarsely.")]
+    public float baselineMeters = 0.06f;
 
     private Camera leftCamera;
     private Camera rightCamera;
@@ -72,7 +81,7 @@ public class CameraStreamer : MonoBehaviour
 
     // One capture, as raw pixels, handed from the main thread to the
     // encoder thread so JPEG encoding never stalls rendering. Pooled -
-    // each is ~7 MB per eye, too much to allocate 30 times a second.
+    // each is ~3 MB per eye, too much to allocate 30 times a second.
     private class Capture
     {
         public byte[] left;
