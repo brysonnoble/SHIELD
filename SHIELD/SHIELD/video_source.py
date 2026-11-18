@@ -124,10 +124,10 @@ class UnityStreamSource(VideoSource):
         self.stereo = stereo
         self.connect_retries = connect_retries
         self.retry_delay = retry_delay
-        # AVS.05.01: no dedicated heartbeat message exists on the wire yet,
-        # so each frame request doubles as the liveness check - if Unity
-        # doesn't answer within this many seconds the link is declared
-        # dead. Set independently of the connect timeout below: leaving a
+        # Each frame request doubles as the video link's liveness check -
+        # if Unity doesn't answer within this many seconds the link is
+        # declared dead. (Not the AVS.05.01 drone -> GCS heartbeat, which
+        # gcs_link.py sends.) Set independently of the connect timeout below: leaving a
         # socket's connect-timeout in place after connect() also throttles
         # every later recv(), which is what silently capped detection of a
         # dropped link at 5s (and froze the GCS window for that whole

@@ -27,6 +27,12 @@ Public Module Common_Test_Variables
     Public Const UNITY_SPAWN_PORT As Integer = 5557
     Public Const UNITY_CAMERA_PORT As Integer = 5558
 
+    ' The Python pipeline's drone <-> GCS command link (gcs_link.py). Must
+    ' match config.py's GCS_LINK_HOST/GCS_LINK_PORT. Test scripts connect to
+    ' it as a second GCS, alongside the GCS window.
+    Public Const GCS_LINK_HOST As String = "127.0.0.1"
+    Public Const GCS_LINK_PORT As Integer = 5560
+
     ' Where the frame edges sit in InstDroneAtRange()'s offset units (the
     ' tangent of the angle off the line of sight). Must match the frames
     ' CameraStreamer.cs streams - the e-CAM25_CUONX sensor it emulates: a

@@ -4,7 +4,8 @@ import threading
 import time
 
 import config
-from gcs_ui import SHIELDGCSWindow
+from gcs_link import DroneLinkServer, GcsLinkClient
+from gcs_ui import ENGAGE_CONFIDENCE_FLOOR, SHIELDGCSWindow
 from object_detection import SHIELDDetector
 from video_source import UnityStreamSource, VideoFileSource, WebcamSource
 
@@ -83,29 +84,33 @@ def build_source(args):
     raise ValueError(f"Unknown source {args.source}")
 
 
-def _pump_tick(window, quit_requested=None):
-    """Pump the Tk event loop once. Used as the on_wait callback for any
-    blocking wait (initial connect, reconnect backoff) so the GCS window
-    keeps redrawing - and stays closable - instead of appearing frozen for
-    the whole wait. Returns True if the window was closed (or a
-    --quit-on-stdin quit was requested), so the wait loop calling this can
-    bail out early instead of finishing its delay.
+def _pump_tick(window, quit_requested=None, link=None):
+    """Pump the Tk event loop once, and carry out any GCS link commands.
+    Used as the on_wait callback for any blocking wait (initial connect,
+    reconnect backoff) so the GCS window keeps redrawing - and stays
+    closable - instead of appearing frozen for the whole wait, and so a
+    Land Now / Shut Down is acted on even with no video. Returns True if
+    the window was closed (or a --quit-on-stdin quit was requested), so
+    the wait loop calling this can bail out early instead of finishing its
+    delay.
     """
     if quit_requested is not None and quit_requested.is_set():
         return True
+    if link is not None:
+        link.process_commands()
     if window is None:
         return False
     window.pump()
     return window.closed
 
 
-def _wait_pumping(window, seconds, quit_requested=None):
+def _wait_pumping(window, seconds, quit_requested=None, link=None):
     """Sleep for `seconds`, pumping `window` throughout instead of
     blocking it. Returns True if the window was closed (or a quit was
     requested) during the wait."""
     end = time.monotonic() + seconds
     while time.monotonic() < end:
-        if _pump_tick(window, quit_requested):
+        if _pump_tick(window, quit_requested, link):
             return True
         time.sleep(0.05)
     return False
@@ -115,7 +120,28 @@ def run_emulation(args):
     quit_requested = _start_stdin_quit_watcher() if args.quit_on_stdin else None
     source = build_source(args)
     detector = SHIELDDetector()
-    window = SHIELDGCSWindow() if not args.no_display else None
+    # The drone's end of the GCS command link (AVS.05, AVS.05.01). Started
+    # before the video source so the heartbeat runs from the outset, and
+    # runs with --no-display too, so the STE can command a headless run.
+    link = DroneLinkServer(
+        config.GCS_LINK_HOST, config.GCS_LINK_PORT,
+        heartbeat_hz=config.HEARTBEAT_HZ,
+        confidence_floor=ENGAGE_CONFIDENCE_FLOOR,
+        track_max_age=config.TRACK_MAX_AGE,
+    )
+    try:
+        link.start()
+    except OSError as exc:
+        raise SystemExit(
+            f"[SHIELD] Could not open the GCS link on {config.GCS_LINK_HOST}:"
+            f"{config.GCS_LINK_PORT} ({exc}). Is another SHIELD pipeline still running?"
+        )
+    window = None
+    if not args.no_display:
+        window = SHIELDGCSWindow(
+            link=GcsLinkClient(config.GCS_LINK_HOST, config.GCS_LINK_PORT),
+            heartbeat_timeout=config.HEARTBEAT_TIMEOUT_SEC,
+        )
     profile_stats = {"read": 0.0, "detect": 0.0, "render": 0.0, "pump": 0.0, "n": 0} if args.profile else None
 
     print(f"[SHIELD] Starting emulation with source={args.source}")
@@ -125,7 +151,7 @@ def run_emulation(args):
             window.set_link_status("Connecting...", "warn")
             window.pump()
         try:
-            source.open(on_wait=lambda: _pump_tick(window, quit_requested))
+            source.open(on_wait=lambda: _pump_tick(window, quit_requested, link))
         except (ConnectionError, RuntimeError) as exc:
             # Was previously unguarded: on total failure to connect (e.g.
             # no stream source available at all) this raised straight out
@@ -135,13 +161,15 @@ def run_emulation(args):
             print(f"[SHIELD] {exc}")
             if window is not None:
                 window.set_link_status("No video source - see console", "bad")
-                _wait_pumping(window, 5.0, quit_requested)
+                _wait_pumping(window, 5.0, quit_requested, link)
             return
+        link.set_video_ok(True)
         if window is not None:
             window.set_link_status("Link stable", "ok")
             window.pump()
 
         while True:
+            link.process_commands()
             if window is not None and window.closed:
                 break
             if quit_requested is not None and quit_requested.is_set():
@@ -176,26 +204,29 @@ def run_emulation(args):
                         break
 
                     print("[SHIELD] Lost connection to Unity, reconnecting...")
+                    link.set_video_ok(False)
                     if window is not None:
                         window.set_link_status("Video feed lost - reconnecting...", "bad")
-                        if _pump_tick(window, quit_requested):
+                        if _pump_tick(window, quit_requested, link):
                             break
                     source.release()
-                    if _wait_pumping(window, 1.0, quit_requested):
+                    if _wait_pumping(window, 1.0, quit_requested, link):
                         break
                     try:
-                        source.open(on_wait=lambda: _pump_tick(window, quit_requested))
+                        source.open(on_wait=lambda: _pump_tick(window, quit_requested, link))
                     except ConnectionError as exc:
                         print(f"[SHIELD] Reconnect failed: {exc}")
                         if window is not None:
                             window.set_link_status("Video feed lost - link down", "bad")
                             window.pump()
                         break
+                    link.set_video_ok(True)
                     if window is not None:
                         window.set_link_status("Link stable", "ok")
                         window.pump()
                     continue
                 print("[SHIELD] Video source ended or disconnected.")
+                link.set_video_ok(False)
                 if window is not None:
                     window.set_link_status("Video feed lost - source disconnected", "bad")
                     window.pump()
@@ -205,6 +236,7 @@ def run_emulation(args):
             detections = detector.process_frame(frame, source.last_stereo)
             if profile_stats is not None:
                 profile_stats["detect"] += time.perf_counter() - t0
+            link.update_tracks(detections)
             for det in detections:
                 cx, cy = det.smoothed_center
                 if det.position_m is not None:
@@ -256,6 +288,7 @@ def run_emulation(args):
         source.release()
         if window is not None:
             window.destroy()
+        link.stop()
 
 
 def main():

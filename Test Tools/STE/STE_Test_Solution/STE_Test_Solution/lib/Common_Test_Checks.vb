@@ -1,4 +1,4 @@
-Imports System.Globalization
+﻿Imports System.Globalization
 Imports System.Text.RegularExpressions
 Imports System.Threading
 
@@ -386,6 +386,86 @@ Public Module Common_Test_Checks
             Fail($"no gap > {maxGapSeconds} s", $"{className} unreported for {longestGap:F1} s")
         Else
             Pass()
+        End If
+    End Sub
+
+    ' --- Drone <-> GCS command link (see Common_Test_Functions.vb) ----------
+
+    ' AVS-05: sends a command over the GCS link and fails unless the drone's
+    ' reply starts with expectedReply, e.g. "ACK ENGAGE 1" or
+    ' "NAK ENGAGE 999 no such target".
+    Public Sub AssertGcsReply(command As String, expectedReply As String)
+        Dim reply As String = Common_Test_Functions.SendGcsCommand(command)
+        If reply IsNot Nothing AndAlso reply.StartsWith(expectedReply, StringComparison.Ordinal) Then
+            Pass()
+        Else
+            Fail(expectedReply, If(reply, "no reply"))
+        End If
+    End Sub
+
+    ' Fails unless the drone reports expectedState ("TRACKING", "ENGAGED",
+    ' "LANDING" or "SHUTDOWN") with expectedTarget engaged ("-" for none).
+    Public Sub AssertDroneState(expectedState As String, Optional expectedTarget As String = "-")
+        Dim current = Common_Test_Functions.GetDroneState()
+        Dim expected As String = $"state={expectedState} target={expectedTarget}"
+        If current Is Nothing Then
+            Fail(expected, "no STATE line")
+            Return
+        End If
+        Dim actual As String = $"state={current.Value.State} target={current.Value.Target}"
+        If actual = expected Then
+            Pass()
+        Else
+            Fail(expected, actual)
+        End If
+    End Sub
+
+    ' AVS-05-01: listens to the GCS link for durationSeconds and makes three
+    ' checks on the heartbeat, timed on arrival at this end:
+    '   1. the average period is within meanToleranceSeconds of 1/expectedHz
+    '   2. no single gap is off by more than maxDeviationSeconds
+    '   3. the sequence numbers run on without a gap (no beat was skipped)
+    Public Sub AssertHeartbeatRate(expectedHz As Double, durationSeconds As Double,
+                                   meanToleranceSeconds As Double, maxDeviationSeconds As Double)
+        Dim beats = Common_Test_Functions.CollectHeartbeats(durationSeconds)
+        Dim period As Double = 1.0 / expectedHz
+        If beats.Count < 2 Then
+            Fail($"{expectedHz} Hz", $"{beats.Count} heartbeat(s) in {durationSeconds}s")
+            Fail($"every gap {period:0.00}s +/- {maxDeviationSeconds:0.00}s", "too few heartbeats")
+            Fail("consecutive sequence numbers", "too few heartbeats")
+            Return
+        End If
+
+        Dim gaps As New List(Of Double)
+        For i As Integer = 1 To beats.Count - 1
+            gaps.Add(beats(i).Seconds - beats(i - 1).Seconds)
+        Next
+        Dim meanPeriod As Double = (beats(beats.Count - 1).Seconds - beats(0).Seconds) / gaps.Count
+        Common_Test_Functions.WriteLog(String.Format(CultureInfo.InvariantCulture,
+            "Heartbeat gaps (s): {0}", String.Join(", ", gaps.Select(Function(g) g.ToString("0.000", CultureInfo.InvariantCulture)))))
+
+        If Math.Abs(meanPeriod - period) <= meanToleranceSeconds Then
+            Pass()
+        Else
+            Fail(String.Format(CultureInfo.InvariantCulture, "mean period {0:0.000}s", period),
+                 String.Format(CultureInfo.InvariantCulture, "{0:0.000}s ({1:0.00} Hz)", meanPeriod, 1.0 / meanPeriod))
+        End If
+
+        Dim worstGap As Double = gaps.OrderByDescending(Function(g) Math.Abs(g - period)).First()
+        If Math.Abs(worstGap - period) <= maxDeviationSeconds Then
+            Pass()
+        Else
+            Fail(String.Format(CultureInfo.InvariantCulture, "every gap {0:0.00}s +/- {1:0.00}s", period, maxDeviationSeconds),
+                 String.Format(CultureInfo.InvariantCulture, "a gap of {0:0.000}s", worstGap))
+        End If
+
+        Dim seqs As List(Of Integer) = beats.Select(Function(b) Integer.Parse(
+            Common_Test_Functions.ParseGcsFields(b.Line).GetValueOrDefault("seq", "-1"), CultureInfo.InvariantCulture)).ToList()
+        Dim firstSkip As Integer = Enumerable.Range(1, seqs.Count - 1).FirstOrDefault(Function(i) seqs(i) <> seqs(i - 1) + 1, -1)
+        If firstSkip = -1 Then
+            Pass()
+        Else
+            Fail("consecutive sequence numbers", $"seq {seqs(firstSkip - 1)} then {seqs(firstSkip)}")
         End If
     End Sub
 End Module

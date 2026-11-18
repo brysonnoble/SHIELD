@@ -1,8 +1,15 @@
 # Interactive ground-control-station window for the SHIELD emulation
 # preview. Replaces the bare cv2.imshow annotated-frame window with a
 # Tkinter panel matching the shield_gcs_ui.html design: status header,
-# live video with HUD overlay, a clickable target list, and an
-# engage/abort control with a degraded-track warning banner.
+# live video with HUD overlay, a clickable target list, an engage/abort
+# control with a degraded-track warning banner, and Land Now / Shut Down
+# overrides.
+#
+# The window is a client of the drone's command link (gcs_link.py), not the
+# owner of the engagement state: its buttons send ENGAGE/ABORT/LAND/
+# SHUTDOWN, and what it shows as engaged/landing/shut down is what the
+# drone reports back, the same way it will be once the GCS runs on a
+# separate laptop over the telemetry radio.
 
 import time
 import tkinter as tk
@@ -12,6 +19,7 @@ import cv2
 from PIL import Image, ImageTk
 
 import config
+import gcs_link
 from object_detection import Detection
 
 # --- Palette, taken directly from shield_gcs_ui.html ---
@@ -119,11 +127,17 @@ def _draw_hud(frame, detections, engaged_id=None):
 
 
 class SHIELDGCSWindow:
-    def __init__(self, title="SHIELD - Emulation"):
+    def __init__(self, title="SHIELD - Emulation", link=None, heartbeat_timeout=3.0):
         self.closed = False
+        self._link = link
+        self._heartbeat_timeout = heartbeat_timeout
+        self._last_heartbeat = None  # time.monotonic() of the last HEARTBEAT
+        self._heartbeat_ok = None    # last state shown, to redraw only on change
+        self._drone_state = gcs_link.STATE_TRACKING
         self._selected_id = None
         self._engaged = False
         self._error_after_id = None
+        self._shutdown_armed_after_id = None
         self._cache: dict[int, _CacheEntry] = {}
         self._photo = None  # keep a reference so Tk doesn't GC the image
         self._photo_size = None  # (w, h) of self._photo, to know when .paste() is safe
@@ -159,6 +173,12 @@ class SHIELDGCSWindow:
             header, text="-- fps", bg=BG_PANEL, fg=TEXT_DIM, font=(FONT, 10), anchor="e",
         )
         self.fps_label.pack(side="right")
+        # AVS.05.01: the drone's heartbeat, as received over the link.
+        self.heartbeat_label = tk.Label(
+            header, text="● Waiting for drone", bg=BG_PANEL, fg=AMBER_TEXT,
+            font=(FONT, 10), anchor="e", padx=10,
+        )
+        self.heartbeat_label.pack(side="right")
         self.mode_label = tk.Label(
             header, text="Tracking", bg=BG_PANEL, fg=GREEN, font=(FONT, 10, "bold"),
         )
@@ -215,6 +235,28 @@ class SHIELDGCSWindow:
             command=self._on_engage_click,
         )
         self.engage_btn.pack(fill="x", pady=(12, 0))
+
+        # Overrides requested by the client (09/28): land immediately, or
+        # cut the motors and lose the drone. Shut Down takes a second click
+        # to confirm; Land Now doesn't, since it's the safe option.
+        overrides = tk.Frame(panel, bg=BG_PANEL)
+        overrides.pack(fill="x", pady=(8, 0))
+        overrides.columnconfigure(0, weight=1, uniform="override")
+        overrides.columnconfigure(1, weight=1, uniform="override")
+        self.land_btn = tk.Button(
+            overrides, text="Land Now", font=(FONT, 11, "bold"), bd=0,
+            highlightthickness=0, relief="flat", height=1, cursor="hand2",
+            bg=AMBER_BG, fg=AMBER_TEXT, activebackground=AMBER_BORDER,
+            activeforeground=AMBER_BG, command=self._on_land_click,
+        )
+        self.land_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4), ipady=4)
+        self.shutdown_btn = tk.Button(
+            overrides, text="Shut Down", font=(FONT, 11, "bold"), bd=0,
+            highlightthickness=0, relief="flat", height=1, cursor="hand2",
+            command=self._on_shutdown_click,
+        )
+        self.shutdown_btn.grid(row=0, column=1, sticky="ew", padx=(4, 0), ipady=4)
+        self._disarm_shutdown()
         self.error_label = tk.Label(
             panel, text="", bg=BG_PANEL, fg=RED_TEXT, font=(FONT, 9),
         )
@@ -245,6 +287,7 @@ class SHIELDGCSWindow:
     def pump(self):
         if self.closed:
             return
+        self._poll_link()
         try:
             self.root.update_idletasks()
             self.root.update()
@@ -252,6 +295,8 @@ class SHIELDGCSWindow:
             self.closed = True
 
     def destroy(self):
+        if self._link is not None:
+            self._link.close()
         try:
             self.root.destroy()
         except tk.TclError:
@@ -427,6 +472,14 @@ class SHIELDGCSWindow:
     def _update_button_state(self):
         if self._engaged:
             return
+        if self._drone_state in (gcs_link.STATE_LANDING, gcs_link.STATE_SHUTDOWN):
+            text = ("Landing — engage disabled" if self._drone_state == gcs_link.STATE_LANDING
+                    else "Motors shut down — engage disabled")
+            self.engage_btn.config(
+                text=text, bg=BTN_IDLE_BG, fg=TEXT_DIM, activebackground=BTN_IDLE_BG,
+                activeforeground=TEXT_DIM, highlightthickness=0,
+            )
+            return
         if self._selected_id is not None:
             self.engage_btn.config(
                 text=f"Engage T-{self._selected_id:02d}",
@@ -442,12 +495,16 @@ class SHIELDGCSWindow:
         self._hide_error()
 
     def _on_engage_click(self):
+        if self._drone_state in (gcs_link.STATE_LANDING, gcs_link.STATE_SHUTDOWN):
+            return
         if self._engaged:
-            self._do_abort()
+            self._send("ABORT")
             return
         if self._selected_id is None:
             self._show_error("Select a target before engaging.")
             return
+        # Checked here too so the operator gets an answer without a round
+        # trip, but the drone checks again and has the final say (NAK).
         entry = self._cache.get(self._selected_id)
         if entry is None or entry.detection.confidence < ENGAGE_CONFIDENCE_FLOOR:
             self._show_error(
@@ -455,28 +512,92 @@ class SHIELDGCSWindow:
                 "— cannot engage (AVS.03)."
             )
             return
-        self._start_engage()
+        self._send(f"ENGAGE {self._selected_id}")
 
-    def _start_engage(self):
-        self._engaged = True
-        self._hide_error()
-        self.mode_label.config(text="Engaged", fg=RED_TEXT)
-        self.engage_btn.config(
-            text="Abort", bg=RED, fg="#ffffff", activebackground=RED,
-            activeforeground="#ffffff", highlightbackground="#ffffff",
-            highlightthickness=2,
+    def _on_land_click(self):
+        self._disarm_shutdown()
+        self._send("LAND")
+
+    def _on_shutdown_click(self):
+        if self._shutdown_armed_after_id is None:
+            self.shutdown_btn.config(
+                text="Confirm shut down", bg=RED, fg="#ffffff",
+                activebackground=RED, activeforeground="#ffffff",
+            )
+            self._shutdown_armed_after_id = self.root.after(3000, self._disarm_shutdown)
+            return
+        self._disarm_shutdown()
+        self._send("SHUTDOWN")
+
+    def _disarm_shutdown(self):
+        if self._shutdown_armed_after_id is not None:
+            self.root.after_cancel(self._shutdown_armed_after_id)
+        self._shutdown_armed_after_id = None
+        self.shutdown_btn.config(
+            text="Shut Down", bg=BTN_IDLE_BG, fg=RED_TEXT,
+            activebackground=RED, activeforeground="#ffffff",
         )
+
+    def _send(self, command):
+        if self._link is None or not self._link.send(command):
+            self._show_error("No link to the drone — command not sent.")
+
+    def _poll_link(self):
+        if self._link is not None:
+            for line in self._link.poll():
+                kind = line.split(" ", 1)[0]
+                if kind in ("HEARTBEAT", "STATE"):
+                    if kind == "HEARTBEAT":
+                        self._last_heartbeat = time.monotonic()
+                    fields = gcs_link.parse_fields(line)
+                    self._apply_drone_state(fields.get("state"), fields.get("target"))
+                elif kind == "NAK":
+                    self._show_error(_nak_message(line))
+        self._update_heartbeat_label()
+
+    def _update_heartbeat_label(self):
+        if self._last_heartbeat is None:
+            ok = None
+        else:
+            ok = time.monotonic() - self._last_heartbeat <= self._heartbeat_timeout
+        if ok == self._heartbeat_ok:
+            return
+        self._heartbeat_ok = ok
+        if ok is None:
+            self.heartbeat_label.config(text="● Waiting for drone", fg=AMBER_TEXT)
+        elif ok:
+            self.heartbeat_label.config(text="● Drone link", fg=GREEN)
+        else:
+            self.heartbeat_label.config(text="● No heartbeat", fg=RED_TEXT)
+
+    def _apply_drone_state(self, state, target):
+        if state is None:
+            return
+        target_id = None if target in (None, "-") else int(target)
+        engaged = state == gcs_link.STATE_ENGAGED
+        if state == self._drone_state and (not engaged or target_id == self._selected_id):
+            return
+        self._drone_state = state
+        self._engaged = engaged
+        self._hide_error()
+        if engaged:
+            self._selected_id = target_id
+            self.mode_label.config(text="Engaged", fg=RED_TEXT)
+            self.engage_btn.config(
+                text="Abort", bg=RED, fg="#ffffff", activebackground=RED,
+                activeforeground="#ffffff", highlightbackground="#ffffff",
+                highlightthickness=2,
+            )
+        else:
+            mode_text, mode_color = {
+                gcs_link.STATE_LANDING: ("Landing", AMBER_TEXT),
+                gcs_link.STATE_SHUTDOWN: ("Motors shut down", RED_TEXT),
+            }.get(state, ("Tracking", GREEN))
+            self.mode_label.config(text=mode_text, fg=mode_color)
+            self.engage_btn.config(highlightthickness=0)
+            self._update_button_state()
         self._render_list()
         self._update_lost_banner()
-        print(f"[SHIELD] ENGAGE issued for track T-{self._selected_id:02d} (UI only; no effector wired up yet)")
-
-    def _do_abort(self):
-        self._engaged = False
-        self.mode_label.config(text="Tracking", fg=GREEN)
-        self.engage_btn.config(highlightthickness=0)
-        self._update_button_state()
-        self._update_lost_banner()
-        print("[SHIELD] ABORT")
 
     def _update_lost_banner(self):
         show = False
@@ -502,3 +623,15 @@ class SHIELDGCSWindow:
     def _hide_error(self):
         self._error_after_id = None
         self.error_label.pack_forget()
+
+
+def _nak_message(line):
+    """'NAK ENGAGE 3 no such target' -> 'Engage refused: no such target.'"""
+    parts = line.split(" ")
+    if len(parts) < 2:
+        return "Command refused."
+    verb = parts[1]
+    # ENGAGE carries a track id; the reason is whatever follows the command.
+    reason_start = 3 if verb == "ENGAGE" else 2
+    reason = " ".join(parts[reason_start:]) or "refused"
+    return f"{verb.title()} refused: {reason}."

@@ -102,11 +102,22 @@ UNITY_PORT = 5555
 UNITY_CONNECT_RETRIES = 15
 UNITY_RETRY_DELAY_SEC = 1.0
 
-# AVS.05.01: the link to the video source shall be heartbeat-monitored.
-# Every frame request doubles as that heartbeat - if Unity doesn't answer
-# within this many seconds, the link is declared dead rather than left to
-# whatever a bare socket recv() would eventually time out at.
+# Every frame request doubles as a liveness check on the video link - if
+# Unity doesn't answer within this many seconds, the link is declared dead
+# rather than left to whatever a bare socket recv() would eventually time
+# out at. (The drone -> GCS heartbeat, AVS.05.01, is separate: see below.)
 UNITY_READ_TIMEOUT_SEC = 2.0
+
+# --- Drone <-> GCS command link (gcs_link.py) ---
+# Engage/abort/Land Now/Shut Down commands in (AVS.05), heartbeat out
+# (AVS.05.01). Localhost TCP in emulation; the telemetry radio on hardware.
+# Unity's ports are 5555-5558 and the GNC SITL's is 5561.
+GCS_LINK_HOST = "127.0.0.1"
+GCS_LINK_PORT = 5560
+HEARTBEAT_HZ = 1.0
+# The GCS window flags the drone link as lost once this long passes with
+# no heartbeat (three missed beats at 1 Hz).
+HEARTBEAT_TIMEOUT_SEC = 3.0
 
 # --- Webcam fallback ---
 WEBCAM_INDEX = 0

@@ -2,6 +2,8 @@ Imports System.Collections.Concurrent
 Imports System.Globalization
 Imports System.IO
 Imports System.Linq
+Imports System.Net.Sockets
+Imports System.Text
 Imports System.Threading
 
 Public Module Common_Test_Functions
@@ -567,6 +569,112 @@ Public Module Common_Test_Functions
     Public Sub DespawnAllDrones()
         SendTcpCommand(UNITY_HOST, UNITY_SPAWN_PORT, "DESPAWN ALL")
     End Sub
+
+    ' --- Drone <-> GCS command link (gcs_link.py) ---------------------------
+    ' The pipeline accepts commands over TCP on GCS_LINK_PORT, the same way
+    ' the GCS window sends them: "ENGAGE <track id>", "ABORT", "LAND" (Land
+    ' Now) and "SHUTDOWN" (Shut Down). It answers each with "ACK <command>" or
+    ' "NAK <command> <reason>", and sends every connected GCS a
+    ' "STATE state=<S> target=<id|->" line on connect and on every change,
+    ' plus a "HEARTBEAT seq=<n> state=<S> ..." line at 1 Hz.
+
+    ' Sends one command and returns the drone's ACK/NAK line, or Nothing if
+    ' none arrives within timeoutSeconds. Logs the exchange.
+    Public Function SendGcsCommand(command As String, Optional timeoutSeconds As Double = 5) As String
+        Using client As TcpClient = ConnectWithRetry(GCS_LINK_HOST, GCS_LINK_PORT, 15, 1000)
+            client.NoDelay = True
+            Using stream As NetworkStream = client.GetStream(),
+                  reader As New StreamReader(stream, Encoding.ASCII)
+                Dim bytes As Byte() = Encoding.ASCII.GetBytes(command & vbLf)
+                stream.Write(bytes, 0, bytes.Length)
+                Dim reply As String = ReadGcsLine(client, reader, timeoutSeconds,
+                                                  Function(line) line.StartsWith("ACK ") OrElse line.StartsWith("NAK "))
+                WriteLog($"GCS command: {command} -> {If(reply, "(no reply)")}")
+                Return reply
+            End Using
+        End Using
+    End Function
+
+    ' The drone's current state ("TRACKING", "ENGAGED", "LANDING" or
+    ' "SHUTDOWN") and engaged track id ("-" if none), from the STATE line
+    ' it sends every new connection. Returns Nothing if none arrives.
+    Public Function GetDroneState(Optional timeoutSeconds As Double = 5) As (State As String, Target As String)?
+        Using client As TcpClient = ConnectWithRetry(GCS_LINK_HOST, GCS_LINK_PORT, 15, 1000)
+            Using reader As New StreamReader(client.GetStream(), Encoding.ASCII)
+                Dim line As String = ReadGcsLine(client, reader, timeoutSeconds, Function(l) l.StartsWith("STATE "))
+                If line Is Nothing Then
+                    Return Nothing
+                End If
+                Dim fields = ParseGcsFields(line)
+                Return (fields.GetValueOrDefault("state", ""), fields.GetValueOrDefault("target", ""))
+            End Using
+        End Using
+    End Function
+
+    ' Listens on the link for durationSeconds and returns every HEARTBEAT
+    ' line received, each with its arrival time in seconds since listening
+    ' started - measured here, at the GCS end, so link delay and jitter
+    ' count against the rate.
+    Public Function CollectHeartbeats(durationSeconds As Double) As List(Of (Seconds As Double, Line As String))
+        Dim beats As New List(Of (Seconds As Double, Line As String))
+        Using client As TcpClient = ConnectWithRetry(GCS_LINK_HOST, GCS_LINK_PORT, 15, 1000)
+            Using reader As New StreamReader(client.GetStream(), Encoding.ASCII)
+                Dim clock As Stopwatch = Stopwatch.StartNew()
+                Do
+                    Dim remaining As Double = durationSeconds - clock.Elapsed.TotalSeconds
+                    If remaining <= 0 Then
+                        Exit Do
+                    End If
+                    Dim line As String = ReadGcsLine(client, reader, remaining, Function(l) l.StartsWith("HEARTBEAT "))
+                    If line Is Nothing Then
+                        Exit Do
+                    End If
+                    beats.Add((clock.Elapsed.TotalSeconds, line))
+                Loop
+            End Using
+        End Using
+        WriteLog($"Heartbeats received in {durationSeconds:0.#}s: {beats.Count}")
+        Return beats
+    End Function
+
+    ' "HEARTBEAT seq=3 state=ENGAGED" -> {seq: "3", state: "ENGAGED"}.
+    Public Function ParseGcsFields(line As String) As Dictionary(Of String, String)
+        Dim fields As New Dictionary(Of String, String)
+        For Each token As String In line.Split(" "c).Skip(1)
+            Dim eq As Integer = token.IndexOf("="c)
+            If eq > 0 Then
+                fields(token.Substring(0, eq)) = token.Substring(eq + 1)
+            End If
+        Next
+        Return fields
+    End Function
+
+    ' Reads lines until one satisfies wanted or timeoutSeconds passes
+    ' (then returns Nothing). Lines that don't match - heartbeats while
+    ' waiting for a reply, say - are skipped.
+    Private Function ReadGcsLine(client As TcpClient, reader As StreamReader, timeoutSeconds As Double,
+                                 wanted As Func(Of String, Boolean)) As String
+        Dim deadline As DateTime = DateTime.Now.AddSeconds(timeoutSeconds)
+        Do
+            Dim remainingMs As Integer = CInt((deadline - DateTime.Now).TotalMilliseconds)
+            If remainingMs <= 0 Then
+                Return Nothing
+            End If
+            client.ReceiveTimeout = remainingMs
+            Dim line As String
+            Try
+                line = reader.ReadLine()
+            Catch ex As IOException
+                Return Nothing ' timed out
+            End Try
+            If line Is Nothing Then
+                Return Nothing ' link closed
+            End If
+            If wanted(line) Then
+                Return line
+            End If
+        Loop
+    End Function
 
     ' Blocks the test case for the given time. InstDrone()/DespawnAllDrones()
     ' return as soon as the scene command is sent, but the change only

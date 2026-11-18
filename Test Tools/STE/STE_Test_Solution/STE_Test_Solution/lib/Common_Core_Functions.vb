@@ -116,8 +116,9 @@ Public Module Common_Core_Functions
     ' connectRetries is exhausted, then returns the open connection. Used to
     ' wait for a just-launched program's listener to actually come up, since
     ' Process.Start() returning only means the OS created the process, not
-    ' that it's finished initializing.
-    Private Function ConnectWithRetry(host As String, port As Integer,
+    ' that it's finished initializing. Public for Common_Test_Functions.vb's
+    ' GCS link helpers, which keep the connection open to read replies.
+    Public Function ConnectWithRetry(host As String, port As Integer,
                                        connectRetries As Integer, retryDelayMs As Integer) As TcpClient
         Dim lastException As SocketException = Nothing
         For attempt As Integer = 1 To connectRetries

@@ -139,6 +139,36 @@ stereo calibration (OpenCV `stereoCalibrate` + `stereoRectify`) to undo
 the wide lens's distortion and align the rows before matching, and
 hardware-synchronized shutters so both images show the same instant.
 
+## Drone <-> GCS command link
+
+`gcs_link.py` is the link between the drone and the Ground Control
+System (AVS.05, AVS.05.01). The pipeline runs the drone's end, a
+command server on `127.0.0.1:5560`, and decides whether each command is
+carried out; the GCS window is a client of it, so what the window shows
+as engaged, landing or shut down is what the drone reported back. STE
+test scripts connect to the same port as a second GCS. On hardware the
+transport becomes the telemetry radio; the messages stay the same.
+
+One ASCII line per message:
+
+| Direction | Message | Meaning |
+|---|---|---|
+| GCS -> drone | `ENGAGE <track id>` | Engage that track. Refused unless the drone is tracking it at >= 25% confidence (AVS.03) and isn't landing or shut down. |
+| GCS -> drone | `ABORT` | Cancel the engagement. |
+| GCS -> drone | `LAND` | Land Now: cancel any engagement and land immediately. |
+| GCS -> drone | `SHUTDOWN` | Shut Down: cancel any engagement and cut the motors (the drone is lost). |
+| drone -> sender | `ACK <command>` / `NAK <command> <reason>` | Carried out, or refused and why. |
+| drone -> all | `STATE state=<S> target=<id or ->` | On connect and on every change. `<S>` is `TRACKING`, `ENGAGED`, `LANDING` or `SHUTDOWN`. |
+| drone -> all | `HEARTBEAT seq=<n> state=<S> target=<id or -> frames=<n> video=<ok or lost>` | 1 Hz (AVS.05.01), from its own thread, so it keeps beating while the video link is down; `frames` and `video` show whether the pipeline itself is still running. |
+
+The GCS window has **Land Now** and **Shut Down** buttons under
+Engage/Abort (Shut Down needs a second click within 3 s to confirm), and
+shows the heartbeat in its header: green "Drone link", or red "No
+heartbeat" after 3 s without one. In emulation there is no flight
+controller or effector yet, so the commands change the drone's state and
+print a `[SHIELD] ...` line, but nothing flies. After Land Now or Shut
+Down, restart the pipeline to engage again.
+
 ## Local emulation setup
 
 The rest of this document covers getting the PC-based emulation running
@@ -266,6 +296,8 @@ python __main__.py <platform> [--source {unity,webcam,file}] [--file PATH]
 | `DUPLICATE_BOX_CONTAINMENT` / `DUPLICATE_BOX_CENTER_OFFSET` | When a lower-confidence box of the same class counts as a duplicate of another and is dropped before tracking: how much of the smaller box must lie inside the other, and how close (as a fraction of the larger box) their centers must be. |
 | `TRACK_MAX_AGE` | Frames a track can go undetected before its Kalman filter is dropped. |
 | `UNITY_HOST` / `UNITY_PORT` | Must match `CameraStreamer.cs`'s `port` field. |
+| `GCS_LINK_HOST` / `GCS_LINK_PORT` | Where the drone <-> GCS command link listens (`127.0.0.1:5560`). Must match `Common_Test_Variables.vb`'s values. |
+| `HEARTBEAT_HZ` / `HEARTBEAT_TIMEOUT_SEC` | Heartbeat rate (1 Hz, AVS.05.01), and how long the GCS window waits without one before showing "No heartbeat". |
 | `WEBCAM_INDEX` | Default webcam device. |
 
 ## Custom drone/balloon model
@@ -444,6 +476,10 @@ detection pipeline.
   calibration, rectification and shutter sync aren't written yet, and
   real matching error will be larger than in simulation.
 - Webcam and video-file sources are mono, so they get no range.
+- Engage, abort, Land Now and Shut Down reach the drone's end of the GCS
+  link, but nothing acts on them yet: there's no flight controller or
+  effector connection, and the link is localhost TCP, not the telemetry
+  radio.
 - Target drones move only in straight lines: `DroneSpawner` can spawn a
   drone that hovers in place or flies from one point to another at a set
   speed and then hovers (`DroneAutopilot.cs`; see
