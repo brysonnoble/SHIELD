@@ -1,4 +1,5 @@
 ﻿Imports System.Globalization
+Imports System.Linq
 Imports System.Text.RegularExpressions
 Imports System.Threading
 
@@ -387,6 +388,125 @@ Public Module Common_Test_Checks
         Else
             Pass()
         End If
+    End Sub
+
+    ' --- Track ID persistence ----------------------------------------------
+
+    ' One "target id=..." line the pipeline printed: its track ID, pixel
+    ' position, confidence and stereo range (Nothing when "dist=n/a").
+    Public Structure TargetReport
+        Public Id As Integer
+        Public X As Double
+        Public Y As Double
+        Public Confidence As Double
+        Public Distance As Double?
+    End Structure
+
+    ' Every className report printed since an OutputMark(), over the next
+    ' durationSeconds (0 = only what's already printed), plus how many
+    ' frames the pipeline processed in that time, from the "frames=" count
+    ' its 1 Hz heartbeat carries. FramedReports counts only the reports
+    ' printed between the first and last heartbeat of the window, so that
+    ' FramedReports / Frames is a detection rate over the same frames.
+    Public Function TargetReportsOverWindowSince(className As String, durationSeconds As Double, sinceLine As Integer) _
+            As (Reports As List(Of TargetReport), Frames As Integer, FramedReports As List(Of TargetReport))
+        Dim targetRegex As New Regex(
+            $"target id=(\d+) class={Regex.Escape(className)}\b.*?conf=([\d.]+) pos=\((-?[\d.]+),(-?[\d.]+)\)(?:.*?dist=([\d.]+)m)?")
+        Dim heartbeatRegex As New Regex("HEARTBEAT seq=\d+ .*?frames=(\d+)")
+        Thread.Sleep(CInt(durationSeconds * 1000))
+
+        Dim lines As String() = Common_Test_Functions.PythonOutputSnapshot()
+        Dim reports As New List(Of TargetReport)
+        Dim framed As New List(Of TargetReport)
+        Dim firstFrames As Integer = -1
+        Dim lastFrames As Integer = -1
+        Dim sinceLastHeartbeat As New List(Of TargetReport)
+        For i As Integer = sinceLine To lines.Length - 1
+            Dim hb As Match = heartbeatRegex.Match(lines(i))
+            If hb.Success Then
+                Dim frames As Integer = Integer.Parse(hb.Groups(1).Value, CultureInfo.InvariantCulture)
+                If firstFrames < 0 Then
+                    firstFrames = frames
+                Else
+                    framed.AddRange(sinceLastHeartbeat)
+                End If
+                sinceLastHeartbeat.Clear()
+                lastFrames = frames
+                Continue For
+            End If
+            Dim m As Match = targetRegex.Match(lines(i))
+            If Not m.Success Then
+                Continue For
+            End If
+            Dim report As New TargetReport With {
+                .Id = Integer.Parse(m.Groups(1).Value, CultureInfo.InvariantCulture),
+                .Confidence = Double.Parse(m.Groups(2).Value, CultureInfo.InvariantCulture),
+                .X = Double.Parse(m.Groups(3).Value, CultureInfo.InvariantCulture),
+                .Y = Double.Parse(m.Groups(4).Value, CultureInfo.InvariantCulture),
+                .Distance = If(m.Groups(5).Success, Double.Parse(m.Groups(5).Value, CultureInfo.InvariantCulture), CType(Nothing, Double?))
+            }
+            reports.Add(report)
+            If firstFrames >= 0 Then
+                sinceLastHeartbeat.Add(report)
+            End If
+        Next
+        Return (reports, Math.Max(0, lastFrames - firstFrames), framed)
+    End Function
+
+    ' AVS-02 (track): how reliably each target keeps one track ID. Collects
+    ' className reports over the next durationSeconds and hands each to the
+    ' target assign() says it belongs to (an index into targetNames, or -1
+    ' to skip it) - e.g. by pixel row when targets fly in separate lanes, or
+    ' by stereo range when one passes in front of another. For each target
+    ' it logs:
+    '   - ID switches: how many times the ID changed between consecutive
+    '     reports of that target (a re-acquisition under a new ID, or an ID
+    '     taken over from another target)
+    '   - majority ID share: the share of its reports carrying its most
+    '     common ID
+    '   - detection rate: its reports per frame processed, which tells a
+    '     switch caused by the detector losing the target apart from one
+    '     caused by the tracker
+    ' and fails that target if it was never reported or switched IDs more
+    ' than maxSwitches times. One Pass/Fail per target.
+    Public Sub AssertIdPersistenceSince(className As String, targetNames As String(),
+                                        assign As Func(Of TargetReport, Integer),
+                                        maxSwitches As Integer, durationSeconds As Double, sinceLine As Integer)
+        Dim window = TargetReportsOverWindowSince(className, durationSeconds, sinceLine)
+        For t As Integer = 0 To targetNames.Length - 1
+            Dim index As Integer = t
+            Dim reports As List(Of TargetReport) = window.Reports.Where(Function(r) assign(r) = index).ToList()
+            If reports.Count = 0 Then
+                Common_Test_Functions.WriteLog($"ID persistence, {targetNames(t)}: not detected")
+                Fail($"{targetNames(t)}: <= {maxSwitches} ID switch(es)", "not detected")
+                Continue For
+            End If
+
+            Dim switches As Integer = 0
+            For i As Integer = 1 To reports.Count - 1
+                If reports(i).Id <> reports(i - 1).Id Then
+                    switches += 1
+                End If
+            Next
+            Dim byId = reports.GroupBy(Function(r) r.Id).OrderByDescending(Function(g) g.Count()).ToList()
+            Dim majorityShare As Double = byId(0).Count() / reports.Count
+            Dim framedCount As Integer = window.FramedReports.Where(Function(r) assign(r) = index).Count()
+            Dim rateText As String = If(window.Frames > 0,
+                String.Format(CultureInfo.InvariantCulture, "{0:0}%", 100.0 * framedCount / window.Frames),
+                "n/a")
+            Common_Test_Functions.WriteLog(String.Format(CultureInfo.InvariantCulture,
+                "ID persistence, {0}: {1} reports, detection rate {2}, IDs [{3}], {4} switch(es), majority ID {5} on {6:0.0}%",
+                targetNames(t), reports.Count, rateText,
+                String.Join(", ", byId.Select(Function(g) $"{g.Key} x{g.Count()}")),
+                switches, byId(0).Key, 100 * majorityShare))
+
+            If switches <= maxSwitches Then
+                Pass()
+            Else
+                Fail($"{targetNames(t)}: <= {maxSwitches} ID switch(es)",
+                     String.Format(CultureInfo.InvariantCulture, "{0} switch(es), majority ID on {1:0.0}% of reports", switches, 100 * majorityShare))
+            End If
+        Next
     End Sub
 
     ' --- Drone <-> GCS command link (see Common_Test_Functions.vb) ----------

@@ -42,6 +42,13 @@ Public Module Common_Test_Variables
     Public ReadOnly FRAME_EDGE_OFFSET_Y As Double = Math.Tan(17.25 * Math.PI / 180)
     Public ReadOnly FRAME_EDGE_OFFSET_X As Double = FRAME_EDGE_OFFSET_Y * 1280 / 720
 
+    ' The same frames in pixels, for turning an offset into the pixel
+    ' position the pipeline reports ("pos=(x,y)", y down): x = width/2 +
+    ' offX * FOCAL_PX, y = height/2 - offY * FOCAL_PX.
+    Public Const FRAME_WIDTH_PX As Integer = 1280
+    Public Const FRAME_HEIGHT_PX As Integer = 720
+    Public ReadOnly FOCAL_PX As Double = (FRAME_HEIGHT_PX / 2) / FRAME_EDGE_OFFSET_Y
+
     ' Must match DroneAutopilot.cs's maxAcceleration (m/s^2) - see
     ' Common_Test_Functions.EstimatedFlightSeconds().
     Public Const DRONE_MAX_ACCELERATION As Double = 4

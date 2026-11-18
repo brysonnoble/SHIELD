@@ -139,11 +139,16 @@ The Unity virtual camera models the Waveshare IMX219-83 chosen at the PDR
 | Baseline | 60 mm | `baselineMeters` = 0.06 |
 | Sync | None between the two cameras | Both rendered in the same frame |
 
-Unity sends `B` and `f` with every stereo frame. Error grows with range
-squared: roughly `range² × matching error / (f × B)`. With `f × B` only
+Those values are set on the `CameraStreamer` component in the scene, which
+is what the built player uses; the defaults in `CameraStreamer.cs` only
+apply to a newly added component. Unity sends `B` and `f` with every
+stereo frame. Error grows with range squared: roughly `range² × matching error / (f × B)`. With `f × B` only
 about 70 px·m, a quarter-pixel matching error is ~0.4 m at 10 m and
 ~1.4 m at 20 m (~7%), about three times the error of the 20 cm pair this
-camera replaced. At 20 m the whole disparity is only ~3.5 px.
+camera replaced. At 20 m the whole disparity is only ~3.5 px. Even on
+Unity's ideal images, AVS_Detection_Test's median range at 20 m reads
+0.3-0.7 m short (1.3 m for the small Toad), against ~0.1 m with the
+20 cm pair; real images will do worse.
 
 On hardware the pair also needs:
 
@@ -503,12 +508,15 @@ detection pipeline.
   [`Test Tools/STE/README.md`](Test%20Tools/STE/README.md)). There are no
   curved paths, evasive motion or scripted multi-leg routes, and the
   camera itself stays where the scene puts it.
-- Stereo range reads about 0.1 m short in the STE tests (e.g. 4.9 m for a
-  drone spawned at 5 m, 0.9 m at 1 m): the match lands on the drone's
-  near surface or body, while tests place drones by their center point.
-- A few spawns still get no range (`dist=n/a`, `match=` under 0.6) -
-  in AVS_Detection_Test, the BumbleBee at 1 m below center and the Toad
-  at 20 m in sweep 2.
+- Stereo range reads short in the STE tests: about 0.1 m up to 10 m
+  (e.g. 4.9 m for a drone spawned at 5 m) - the match lands on the
+  drone's near surface, while tests place drones by their center point -
+  growing to 0.3-0.7 m at 20 m with the IMX219-83's 6 cm baseline.
+- The model still misses the small Toad airframe at 15-20 m in
+  AVS_Detection_Test.
+- Fast or occluded targets can change track ID: AVS_ID_Persistence_Test
+  measures it, and a drone passing at 6 m/s (banking hard) or briefly
+  hidden behind a nearer drone currently picks up a new ID.
 
 ## Troubleshooting
 

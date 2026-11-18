@@ -292,8 +292,11 @@ MonoBehaviour:
   port: 5555
   targetFps: 30
   jpegQuality: 75
-  maxWidth: 1920
-  maxHeight: 1080
+  sensorWidth: 1280
+  sensorHeight: 720
+  verticalFovDegrees: 34.5
+  stereo: 1
+  baselineMeters: 0.06
 --- !u!114 &963194230
 MonoBehaviour:
   m_ObjectHideFlags: 0

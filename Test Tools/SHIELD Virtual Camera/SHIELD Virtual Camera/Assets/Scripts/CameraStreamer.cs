@@ -19,6 +19,11 @@ using UnityEngine.Experimental.Rendering;
 // sensor's resolution and vertical field of view, independent of the
 // player window's size.
 //
+// The scene stores its own copy of the Sensor and Stereo values below
+// (Assets/Scenes/SHIELD Virtual Camera.unity), and that copy is what a
+// build uses - changing only the defaults here doesn't reach the built
+// player. Change them in the scene too.
+//
 // Pull-based protocol: the client sends a single request byte, then this
 // sends back a 4-byte big-endian length followed by that many payload
 // bytes. Request 0x02 gets a stereo payload: "SHST", float32 baseline
